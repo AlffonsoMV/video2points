@@ -92,6 +92,7 @@ def main() -> None:
     )
     fig1, _ = utils.plot_point_cloud_3d(pts1, cols1, title="Initial Two-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig1, out_dir / "01_single_view_point_cloud.png")
+    utils.save_point_cloud_ply(pts1, cols1, out_dir / "01_single_view_point_cloud.ply")
 
     print("\n[2/6] Rendering projection from VGGT camera...")
     pts_render, cols_render = _merged_scene_point_cloud(
@@ -206,6 +207,7 @@ def main() -> None:
     )
     fig2, _ = utils.plot_point_cloud_3d(pts2, cols2, title="Augmented Multi-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig2, out_dir / "06_two_view_point_cloud.png")
+    utils.save_point_cloud_ply(pts2, cols2, out_dir / "06_two_view_point_cloud.ply")
 
     print("\nE2E smoke test finished successfully.")
     print(f"Artifacts saved in: {out_dir.resolve()}")

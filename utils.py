@@ -362,6 +362,63 @@ def plot_point_cloud_3d(
     return fig, ax
 
 
+def save_point_cloud_ply(
+    points_xyz: np.ndarray,
+    colors_rgb: np.ndarray | None,
+    path: str | Path,
+) -> Path:
+    pts = np.asarray(points_xyz, dtype=np.float32)
+    if pts.ndim != 2 or pts.shape[1] != 3:
+        raise ValueError(f"points_xyz must have shape (N, 3), got {pts.shape}")
+
+    if colors_rgb is None:
+        cols = np.full((len(pts), 3), 255, dtype=np.uint8)
+    else:
+        cols = np.asarray(colors_rgb)
+        if cols.shape != pts.shape:
+            raise ValueError(f"colors_rgb must have shape {pts.shape}, got {cols.shape}")
+        if cols.dtype != np.uint8:
+            scale = 255.0 if cols.size and float(np.nanmax(cols)) <= 1.0 else 1.0
+            cols = np.clip(cols * scale, 0, 255).astype(np.uint8)
+
+    vertex_dtype = np.dtype(
+        [
+            ("x", "<f4"),
+            ("y", "<f4"),
+            ("z", "<f4"),
+            ("red", "u1"),
+            ("green", "u1"),
+            ("blue", "u1"),
+        ]
+    )
+    vertex_data = np.empty(len(pts), dtype=vertex_dtype)
+    vertex_data["x"] = pts[:, 0]
+    vertex_data["y"] = pts[:, 1]
+    vertex_data["z"] = pts[:, 2]
+    vertex_data["red"] = cols[:, 0]
+    vertex_data["green"] = cols[:, 1]
+    vertex_data["blue"] = cols[:, 2]
+
+    path = Path(path)
+    ensure_dir(path.parent)
+    header = (
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        f"element vertex {len(vertex_data)}\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "property uchar red\n"
+        "property uchar green\n"
+        "property uchar blue\n"
+        "end_header\n"
+    )
+    with path.open("wb") as f:
+        f.write(header.encode("ascii"))
+        vertex_data.tofile(f)
+    return path
+
+
 def _set_axes_equal_3d(ax: Any, pts: np.ndarray) -> None:
     mins = pts.min(axis=0)
     maxs = pts.max(axis=0)
