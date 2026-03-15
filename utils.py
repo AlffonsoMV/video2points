@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import gc
 import io
-import math
 import os
 import random
 import time
@@ -65,6 +64,9 @@ class PipelineConfig:
         "changes to visible regions, duplicated objects, warped geometry, blurry details, oversmoothing"
     )
     seed: int = 0
+    n_frames_per_video: int = 7
+    max_iterations: int = 1
+    n_orbit_fill_views: int = 4
 
 
 @dataclass
@@ -137,6 +139,125 @@ def resolve_input_image(
     raise FileNotFoundError(f"Could not find {stem} with known suffixes in {data_dir}. Found: {existing}")
 
 
+def list_videos(
+    data_dir: str | Path = "data",
+    exts: Iterable[str] = (".mp4", ".mov", ".avi", ".mkv", ".MP4", ".MOV", ".AVI", ".MKV"),
+) -> list[Path]:
+    """Return sorted paths to video files in data_dir."""
+    data_dir = Path(data_dir)
+    if not data_dir.exists():
+        return []
+    exts_set = set(exts)
+    return sorted([p for p in data_dir.glob("*") if p.is_file() and p.suffix in exts_set])
+
+
+def extract_frame_from_video(
+    video_path: str | Path,
+    frame_index: int | str = "middle",
+) -> Image.Image:
+    """
+    Extract a single frame from a video.
+    frame_index: int (0-based), or "first", "middle", "last"
+    """
+    video_path = Path(video_path)
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total == 0:
+        raise RuntimeError(f"Video has no frames: {video_path}")
+
+    if frame_index == "first":
+        idx = 0
+    elif frame_index == "middle":
+        idx = total // 2
+    elif frame_index == "last":
+        idx = total - 1
+    else:
+        idx = int(frame_index)
+    idx = max(0, min(idx, total - 1))
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        raise RuntimeError(f"Cannot read frame {idx} from {video_path}")
+
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(frame, mode="RGB")
+
+
+def extract_frames_from_videos(
+    data_dir: str | Path = "data",
+    frame_index: int | str = "middle",
+    output_stem: str = "image",
+    overwrite: bool = True,
+) -> list[Path]:
+    """
+    Extract one frame from each video in data_dir, save as image_01.png, image_02.png, etc.
+    Returns list of saved image paths.
+    """
+    videos = list_videos(data_dir)
+    if not videos:
+        raise FileNotFoundError(f"No video files found in {data_dir}")
+    data_dir = Path(data_dir)
+    saved: list[Path] = []
+    for i, v in enumerate(videos, start=1):
+        out_path = data_dir / f"{output_stem}_{i:02d}.png"
+        if out_path.exists() and not overwrite:
+            saved.append(out_path)
+            continue
+        img = extract_frame_from_video(v, frame_index=frame_index)
+        save_pil(img, out_path)
+        saved.append(out_path)
+    return saved
+
+
+def extract_n_frames_from_video(
+    video_path: str | Path,
+    n_frames: int = 7,
+    output_dir: str | Path | None = None,
+) -> list[Path]:
+    """
+    Extract n_frames evenly-spaced frames from a single video and save as PNGs.
+    Returns list of saved image paths.
+    """
+    video_path = Path(video_path)
+    if output_dir is None:
+        output_dir = video_path.parent
+    output_dir = ensure_dir(output_dir)
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total == 0:
+        cap.release()
+        raise RuntimeError(f"Video has no frames: {video_path}")
+
+    n_frames = min(n_frames, total)
+    indices = np.linspace(0, total - 1, n_frames, dtype=int)
+
+    saved: list[Path] = []
+    stem = video_path.stem
+    for i, frame_idx in enumerate(indices):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        out_path = output_dir / f"{stem}_frame_{i:03d}.png"
+        Image.fromarray(frame, mode="RGB").save(out_path)
+        saved.append(out_path)
+
+    cap.release()
+    if not saved:
+        raise RuntimeError(f"Could not extract any frames from {video_path}")
+    return saved
+
+
 def ensure_png_copy(image_path: str | Path, target_name: str | None = None) -> Path:
     src = Path(image_path)
     target = src.with_suffix(".png") if target_name is None else src.parent / target_name
@@ -187,11 +308,16 @@ def load_vggt_model(
     device = device or get_device()
     cache_key = (model_id, device)
     if use_cache and cache_key in _VGGT_MODEL_CACHE:
+        print(f"  [vggt] Using cached model on {device}")
         return _VGGT_MODEL_CACHE[cache_key]
 
+    print(f"  [vggt] Downloading/loading model {model_id} ...")
+    t0 = time.time()
     model = VGGT.from_pretrained(model_id)
+    print(f"  [vggt] Model loaded in {time.time() - t0:.1f}s. Moving to {device} ...")
     model.eval()
     model.to(device)
+    print(f"  [vggt] Ready on {device} ({time.time() - t0:.1f}s total)")
 
     if use_cache:
         _VGGT_MODEL_CACHE[cache_key] = model
@@ -237,14 +363,20 @@ def run_vggt_reconstruction(
     if model is None:
         model = load_vggt_model(model_id=model_id, device=device)
 
+    print(f"  [vggt] Preprocessing {len(image_paths)} images (mode={preprocess_mode}) ...")
+    t0 = time.time()
     images = load_and_preprocess_images([str(p) for p in image_paths], mode=preprocess_mode)
     image_hw = tuple(int(x) for x in images.shape[-2:])
+    print(f"  [vggt] Preprocessed to {images.shape} in {time.time() - t0:.1f}s")
     images_dev = images.to(device)
 
+    print(f"  [vggt] Running inference on {device} ...")
+    t1 = time.time()
     with torch.no_grad():
         with _cuda_autocast_context(device):
             predictions = model(images_dev)
         extrinsic, intrinsic = pose_encoding_to_extri_intri(predictions["pose_enc"], image_hw)
+    print(f"  [vggt] Inference done in {time.time() - t1:.1f}s")
 
     predictions["extrinsic"] = extrinsic
     predictions["intrinsic"] = intrinsic
@@ -729,6 +861,135 @@ def build_hole_mask_from_valid_mask(
     return hole_mask
 
 
+# ---------------------------------------------------------------------------
+# Orbit estimation & novel-camera generation
+# ---------------------------------------------------------------------------
+
+@dataclass
+class OrbitInfo:
+    """Parameters describing the camera orbit around an object."""
+    centroid: np.ndarray        # (3,) object centroid in world coords
+    normal: np.ndarray          # (3,) orbit-plane normal (consistent with cam "up")
+    radius: float               # median distance from centroid to cameras (in-plane)
+    u: np.ndarray               # (3,) first basis vector in the orbit plane
+    v: np.ndarray               # (3,) second basis vector in the orbit plane
+    angles: np.ndarray          # (N,) sorted angles of existing cameras on the orbit
+    gap_start: float            # angle (rad) where the largest gap begins
+    gap_end: float              # angle (rad) where the largest gap ends
+    gap_size: float             # size of the largest gap in radians
+
+
+def estimate_orbit(
+    extrinsics: list[np.ndarray] | np.ndarray,
+    centroid: np.ndarray,
+) -> OrbitInfo:
+    """Fit a circular orbit to the camera positions around *centroid*.
+
+    Uses PCA to find the orbit plane, then converts each camera centre to an
+    angle on that plane.  Returns an ``OrbitInfo`` describing the orbit and the
+    largest angular gap (= the part of the 360 arc not covered by the video).
+    """
+    cam_centers = np.array(
+        [camera_center_from_extrinsic(np.asarray(e, dtype=np.float32)) for e in extrinsics],
+        dtype=np.float32,
+    )
+    centroid = np.asarray(centroid, dtype=np.float32)
+
+    centered = cam_centers - centroid
+    _, s, Vt = np.linalg.svd(centered, full_matrices=False)
+
+    u_basis = Vt[0].astype(np.float32)
+    v_basis = Vt[1].astype(np.float32)
+    normal = Vt[2].astype(np.float32)
+
+    # Ensure the normal is consistent with the average camera "up" direction.
+    avg_up = np.zeros(3, dtype=np.float32)
+    for e in extrinsics:
+        R_wfc = np.asarray(e, dtype=np.float32)[:, :3].T
+        avg_up -= R_wfc[:, 1]  # -Y_cam is "up" in OpenCV convention
+    avg_up /= max(np.linalg.norm(avg_up), 1e-8)
+    if np.dot(normal, avg_up) < 0:
+        normal = -normal
+
+    projected = centered - np.outer(centered @ normal, normal)
+    radii = np.linalg.norm(projected, axis=1)
+    radius = float(np.median(radii))
+
+    angles = np.arctan2(projected @ v_basis, projected @ u_basis).astype(np.float32)
+    order = np.argsort(angles)
+    angles_sorted = angles[order]
+
+    # Find the largest angular gap (including the wrap-around gap).
+    diffs = np.diff(angles_sorted)
+    wrap_gap = float(2 * np.pi - (angles_sorted[-1] - angles_sorted[0]))
+    all_gaps = np.append(diffs, wrap_gap)
+    gap_idx = int(np.argmax(all_gaps))
+
+    if gap_idx < len(diffs):
+        gap_start = float(angles_sorted[gap_idx])
+        gap_end = float(angles_sorted[gap_idx + 1])
+    else:
+        gap_start = float(angles_sorted[-1])
+        gap_end = float(angles_sorted[0] + 2 * np.pi)
+
+    return OrbitInfo(
+        centroid=centroid,
+        normal=normal,
+        radius=radius,
+        u=u_basis,
+        v=v_basis,
+        angles=angles_sorted,
+        gap_start=gap_start,
+        gap_end=gap_end,
+        gap_size=float(all_gaps[gap_idx]),
+    )
+
+
+def generate_orbit_cameras(
+    orbit: OrbitInfo,
+    n_views: int,
+    reference_intrinsic: np.ndarray,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Place *n_views* cameras evenly inside the orbit's largest angular gap.
+
+    Each camera sits on the fitted circle and looks at the centroid.
+    Returns a list of ``(extrinsic, intrinsic)`` pairs.
+    """
+    if n_views <= 0:
+        return []
+
+    new_angles = np.linspace(orbit.gap_start, orbit.gap_end, n_views + 2)[1:-1]
+
+    ref_intr = np.asarray(reference_intrinsic, dtype=np.float32)
+    cameras: list[tuple[np.ndarray, np.ndarray]] = []
+
+    for angle in new_angles:
+        pos = orbit.centroid + orbit.radius * (
+            np.cos(angle) * orbit.u + np.sin(angle) * orbit.v
+        )
+
+        z_cam = orbit.centroid - pos
+        z_cam = z_cam / max(np.linalg.norm(z_cam), 1e-8)
+
+        x_cam = np.cross(z_cam, orbit.normal)
+        x_norm = np.linalg.norm(x_cam)
+        if x_norm < 1e-6:
+            arb = np.array([1, 0, 0], dtype=np.float32)
+            if abs(np.dot(z_cam, arb)) > 0.9:
+                arb = np.array([0, 1, 0], dtype=np.float32)
+            x_cam = np.cross(z_cam, arb)
+            x_norm = np.linalg.norm(x_cam)
+        x_cam = x_cam / x_norm
+
+        y_cam = np.cross(z_cam, x_cam)
+
+        R_wfc = np.column_stack([x_cam, y_cam, z_cam]).astype(np.float32)
+        extr = extrinsic_from_camera_pose(R_wfc, pos.astype(np.float32))
+        cameras.append((extr, ref_intr.copy()))
+
+    return cameras
+
+
 def overlay_mask_on_image(
     image: Image.Image | np.ndarray,
     mask: Image.Image | np.ndarray,
@@ -858,8 +1119,11 @@ def load_flux2_klein_pipeline(
     dtype = torch.float16 if device in {"cuda", "mps"} else torch.float32
     cache_key = (f"flux2_klein::{model_id}", device, str(dtype))
     if use_cache and cache_key in _INPAINT_PIPE_CACHE:
+        print(f"  [inpaint] Using cached FLUX2-klein pipeline on {device}")
         return _INPAINT_PIPE_CACHE[cache_key]
 
+    print(f"  [inpaint] Loading FLUX2-klein pipeline {model_id} (dtype={dtype}) ...")
+    t0 = time.time()
     Flux2KleinPipeline = getattr(diffusers, "Flux2KleinPipeline", None)
     if Flux2KleinPipeline is None:
         raise RuntimeError(
@@ -887,6 +1151,7 @@ def load_flux2_klein_pipeline(
     except Exception:
         pass
 
+    print(f"  [inpaint] FLUX2-klein pipeline ready in {time.time() - t0:.1f}s")
     if use_cache:
         _INPAINT_PIPE_CACHE[cache_key] = pipe
     return pipe
@@ -1168,6 +1433,9 @@ def inpaint_with_diffusion(
                 backend = "flux2_klein_local"
         else:
             backend = "diffusers"
+
+    print(f"  [inpaint] backend={backend}, model={model_id}, steps={num_inference_steps}")
+    t0 = time.time()
 
     if backend == "flux2_klein_bfl":
         return inpaint_with_flux2_klein_bfl(
