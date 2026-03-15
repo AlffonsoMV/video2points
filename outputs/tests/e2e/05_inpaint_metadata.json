@@ -6,14 +6,16 @@
   "seed": 1,
   "reference_images": [
     "data/image_01.png",
-    "data/image_02.png"
+    "data/image_02.png",
+    "data/image_03.png",
+    "data/image_04.png"
   ],
   "input_image": "outputs/tests/e2e/04_novel_view_input.png",
   "mask_image": "outputs/tests/e2e/04_hole_mask.png",
   "num_inference_steps": 4,
   "guidance_scale": 1.0,
   "metadata": {
-    "reference_count": 2,
+    "reference_count": 4,
     "model_id": "black-forest-labs/FLUX.2-klein-4B"
   }
 }

@@ -170,29 +170,49 @@ def evaluate_novel_view_regeneration(
 
     base_extrinsics = np.asarray(scene_base["extrinsic"], dtype=np.float32)
     augmented_extrinsics = np.asarray(scene_augmented["extrinsic"], dtype=np.float32)
+    generated_index = len(data_images)
     base_scale = camera_baseline_scale(base_extrinsics, idx_a=0, idx_b=1)
     augmented_scale = camera_baseline_scale(augmented_extrinsics, idx_a=0, idx_b=1)
 
     target_rotation, target_translation = relative_camera_pose_from_reference(base_extrinsics[0], novel_extr)
-    original_second_rotation, original_second_translation = relative_camera_pose_from_reference(
-        base_extrinsics[0],
-        base_extrinsics[1],
-    )
-    predicted_third_rotation, predicted_third_translation = relative_camera_pose_from_reference(
+    predicted_generated_rotation, predicted_generated_translation = relative_camera_pose_from_reference(
         augmented_extrinsics[0],
-        augmented_extrinsics[2],
+        augmented_extrinsics[generated_index],
     )
 
     target_translation_normalized = target_translation / max(base_scale, 1e-8)
-    original_second_translation_normalized = original_second_translation / max(base_scale, 1e-8)
-    predicted_third_translation_normalized = predicted_third_translation / max(augmented_scale, 1e-8)
+    predicted_generated_translation_normalized = predicted_generated_translation / max(augmented_scale, 1e-8)
 
-    predicted_intrinsic = np.asarray(scene_augmented["intrinsic"][2], dtype=np.float32)
+    predicted_intrinsic = np.asarray(scene_augmented["intrinsic"][generated_index], dtype=np.float32)
     target_intrinsic = np.asarray(novel_intr, dtype=np.float32)
     focal_target = np.array([target_intrinsic[0, 0], target_intrinsic[1, 1]], dtype=np.float32)
     focal_predicted = np.array([predicted_intrinsic[0, 0], predicted_intrinsic[1, 1]], dtype=np.float32)
     principal_target = np.array([target_intrinsic[0, 2], target_intrinsic[1, 2]], dtype=np.float32)
     principal_predicted = np.array([predicted_intrinsic[0, 2], predicted_intrinsic[1, 2]], dtype=np.float32)
+
+    original_pose_comparisons: list[dict[str, Any]] = []
+    for idx in range(1, len(data_images)):
+        original_rotation, original_translation = relative_camera_pose_from_reference(
+            base_extrinsics[0],
+            base_extrinsics[idx],
+        )
+        original_translation_normalized = original_translation / max(base_scale, 1e-8)
+        original_pose_comparisons.append(
+            {
+                "original_index": idx,
+                "original_path": str(data_images[idx]),
+                **relative_pose_comparison(
+                    original_rotation,
+                    original_translation_normalized,
+                    predicted_generated_rotation,
+                    predicted_generated_translation_normalized,
+                ),
+            }
+        )
+    closest_original_pose = min(
+        original_pose_comparisons,
+        key=lambda item: (item["translation_l2_normalized"], item["rotation_error_deg"]),
+    )
 
     cross_view_reference_metrics: dict[str, Any] = {}
     for src in data_images:
@@ -223,18 +243,14 @@ def evaluate_novel_view_regeneration(
         },
         "camera_pose_metrics": {
             "note": "Pose comparisons use camera-0-relative geometry and baseline-normalized translations so the result is meaningful even if the two reconstructions use slightly different global frames or scales.",
-            "target_vs_predicted_third": relative_pose_comparison(
+            "generated_view_index": generated_index,
+            "target_vs_predicted_generated": relative_pose_comparison(
                 target_rotation,
                 target_translation_normalized,
-                predicted_third_rotation,
-                predicted_third_translation_normalized,
+                predicted_generated_rotation,
+                predicted_generated_translation_normalized,
             ),
-            "original_second_vs_predicted_third": relative_pose_comparison(
-                original_second_rotation,
-                original_second_translation_normalized,
-                predicted_third_rotation,
-                predicted_third_translation_normalized,
-            ),
+            "closest_original_vs_predicted_generated": closest_original_pose,
             "intrinsic_error": {
                 "focal_l2": float(np.linalg.norm(focal_predicted - focal_target)),
                 "principal_point_l2": float(np.linalg.norm(principal_predicted - principal_target)),

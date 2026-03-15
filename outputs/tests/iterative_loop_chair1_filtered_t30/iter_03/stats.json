@@ -1,0 +1,83 @@
+{
+  "iteration_index": 3,
+  "seed": 4,
+  "device": "mps",
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "input_count_before_generation": 6,
+  "input_count_after_generation": 7,
+  "source_view": {
+    "index": 4,
+    "path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_01/03_flux/generated_raw.png",
+    "saved_input_path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/01_before/source_view_input.png",
+    "saved_render_path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/01_before/source_view_render.png"
+  },
+  "coverage_before_generation": {
+    "largest_gap_deg": 247.44531266735987,
+    "target_gap_deg": 45.0,
+    "step_from_boundary_deg": 45.0,
+    "boundary_side": "gap_start",
+    "target_angle_deg": 122.62261372833703,
+    "camera_angles_deg": [
+      -34.932071685791016,
+      8.345863733438819e-08,
+      14.357888221740723,
+      27.84236717224121,
+      36.192779541015625,
+      77.62261199951172
+    ],
+    "orbit_radius": 0.8855298757553101
+  },
+  "projection_stats_before": {
+    "projected_count": 99638,
+    "valid_ratio": 0.65425629711344,
+    "hole_ratio": 0.5973524544953116
+  },
+  "flux_inputs": [
+    "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/00_inputs/00_pos2_flux_base.png",
+    "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/00_inputs/01_reference_generated_context.png",
+    "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/00_inputs/02_reference_generated_context.png"
+  ],
+  "environment_anchor_paths": [
+    "outputs/tests/iterative_loop_chair1_filtered_t30/00_seed_frames/chair1_frame_000.png",
+    "outputs/tests/iterative_loop_chair1_filtered_t30/00_seed_frames/chair1_frame_001.png",
+    "outputs/tests/iterative_loop_chair1_filtered_t30/00_seed_frames/chair1_frame_002.png",
+    "outputs/tests/iterative_loop_chair1_filtered_t30/00_seed_frames/chair1_frame_003.png"
+  ],
+  "environment_anchor_sheet_path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/00_inputs/01_environment_anchor_sheet.png",
+  "flux_output": {
+    "raw_path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/03_flux/generated_raw.png",
+    "composited_path": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/03_flux/generated_composited.png",
+    "metadata": {
+      "reference_count": 2,
+      "model_id": "black-forest-labs/FLUX.2-klein-4B"
+    }
+  },
+  "pose_and_coverage_after": {
+    "largest_gap_after_deg": 222.4100602270002,
+    "gap_improvement_deg": 25.03525244035967,
+    "predicted_angle_deg": 100.37116664590063,
+    "min_angle_to_existing_deg": 20.861255536673184,
+    "target_pose_error": {
+      "rotation_error_deg": 18.140014531930202,
+      "translation_l2_normalized": 1.7478361129760742,
+      "translation_direction_error_deg": 13.987569071172128,
+      "target_translation_norm": 6.9146833419799805,
+      "predicted_translation_norm": 6.198285102844238,
+      "translation_norm_ratio_pred_over_target": 0.8963946425736676
+    }
+  },
+  "paths": {
+    "before_point_cloud_ply": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/01_before/point_cloud.ply",
+    "before_point_cloud_png": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/01_before/point_cloud.png",
+    "pos2_render_before": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/02_target_pos2/pos2_render_before.png",
+    "pos2_flux_base": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/02_target_pos2/pos2_flux_base.png",
+    "hole_mask": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/02_target_pos2/hole_mask.png",
+    "hole_mask_overlay": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/02_target_pos2/hole_mask_overlay.png",
+    "generated_raw": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/03_flux/generated_raw.png",
+    "generated_composited": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/03_flux/generated_composited.png",
+    "after_point_cloud_ply": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/04_after/point_cloud.ply",
+    "after_point_cloud_png": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/04_after/point_cloud.png",
+    "pos2_render_after": "outputs/tests/iterative_loop_chair1_filtered_t30/iter_03/04_after/pos2_render_after.png"
+  }
+}

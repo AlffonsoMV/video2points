@@ -54,6 +54,10 @@ class PipelineConfig:
     novel_roll_deg: float = 0.0
     mask_dilate_px: int = 4
     mask_close_px: int = 3
+    mask_exterior_only: bool = False
+    mask_support_close_px: int = 0
+    mask_support_dilate_px: int = 0
+    mask_fill_rgb: tuple[int, int, int] | None = None
     inpaint_steps: int = 6
     inpaint_guidance_scale: float = 1.0
     inpaint_prompt: str = (
@@ -105,9 +109,18 @@ def clear_torch_cache() -> None:
             pass
 
 
-def clear_loaded_model_caches() -> None:
-    _VGGT_MODEL_CACHE.clear()
-    _INPAINT_PIPE_CACHE.clear()
+def clear_loaded_model_caches(
+    *,
+    clear_vggt: bool = True,
+    clear_inpaint: bool = True,
+    clear_lpips: bool = True,
+) -> None:
+    if clear_vggt:
+        _VGGT_MODEL_CACHE.clear()
+    if clear_inpaint:
+        _INPAINT_PIPE_CACHE.clear()
+    if clear_lpips:
+        _LPIPS_MODEL_CACHE.clear()
     clear_torch_cache()
 
 
@@ -240,12 +253,33 @@ def extract_n_frames_from_video(
     n_frames = min(n_frames, total)
     indices = np.linspace(0, total - 1, n_frames, dtype=int)
 
+    def read_frame_near(target_idx: int, search_radius: int = 2) -> np.ndarray | None:
+        candidate_indices = [int(np.clip(target_idx, 0, total - 1))]
+        for offset in range(1, search_radius + 1):
+            candidate_indices.append(int(np.clip(target_idx - offset, 0, total - 1)))
+            candidate_indices.append(int(np.clip(target_idx + offset, 0, total - 1)))
+
+        # Some videos expose a nominal frame count that includes a tail of unreadable frames.
+        # If the local neighborhood fails, walk backward through the clip so the caller still
+        # gets a stable set of samples instead of silently dropping the last view.
+        candidate_indices.extend(range(max(target_idx - search_radius - 1, -1), -1, -1))
+
+        tried: set[int] = set()
+        for idx in candidate_indices:
+            if idx in tried:
+                continue
+            tried.add(idx)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+            ret, frame = cap.read()
+            if ret:
+                return frame
+        return None
+
     saved: list[Path] = []
     stem = video_path.stem
     for i, frame_idx in enumerate(indices):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(frame_idx))
-        ret, frame = cap.read()
-        if not ret:
+        frame = read_frame_near(int(frame_idx))
+        if frame is None:
             continue
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         out_path = output_dir / f"{stem}_frame_{i:03d}.png"
@@ -841,14 +875,41 @@ def build_hole_mask_from_valid_mask(
     dilate_px: int = 4,
     close_px: int = 3,
     min_area_px: int = 16,
+    exterior_only: bool = False,
+    support_close_px: int = 0,
+    support_dilate_px: int = 0,
 ) -> np.ndarray:
-    hole_mask = (~np.asarray(valid_mask, dtype=bool)).astype(np.uint8) * 255
+    valid = np.asarray(valid_mask, dtype=bool)
+
+    if exterior_only:
+        support_mask = valid.astype(np.uint8) * 255
+        if support_close_px > 0:
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * support_close_px + 1, 2 * support_close_px + 1))
+            support_mask = cv2.morphologyEx(support_mask, cv2.MORPH_CLOSE, k)
+        if support_dilate_px > 0:
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * support_dilate_px + 1, 2 * support_dilate_px + 1))
+            support_mask = cv2.dilate(support_mask, k)
+
+        support_bool = support_mask > 0
+        background = (~support_bool).astype(np.uint8)
+        _, labels = cv2.connectedComponents(background, connectivity=8)
+        border_labels = np.unique(
+            np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
+        )
+        exterior_background = np.isin(labels, border_labels)
+        hole_mask = ((~valid) & exterior_background).astype(np.uint8) * 255
+    else:
+        support_bool = None
+        hole_mask = (~valid).astype(np.uint8) * 255
+
     if close_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1))
         hole_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_CLOSE, k)
     if dilate_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
         hole_mask = cv2.dilate(hole_mask, k)
+    if support_bool is not None:
+        hole_mask[support_bool] = 0
 
     if min_area_px > 1:
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats((hole_mask > 0).astype(np.uint8), connectivity=8)
@@ -896,7 +957,7 @@ def estimate_orbit(
     centroid = np.asarray(centroid, dtype=np.float32)
 
     centered = cam_centers - centroid
-    _, s, Vt = np.linalg.svd(centered, full_matrices=False)
+    _, s, Vt = np.linalg.svd(centered, full_matrices=True)
 
     u_basis = Vt[0].astype(np.float32)
     v_basis = Vt[1].astype(np.float32)
@@ -1530,9 +1591,25 @@ def prepare_novel_view_inpainting_inputs(
     dilate_px: int = 4,
     close_px: int = 3,
     min_area_px: int = 16,
+    exterior_only: bool = False,
+    support_close_px: int = 0,
+    support_dilate_px: int = 0,
+    fill_mask_rgb: tuple[int, int, int] | None = None,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
     novel_img = render.image.convert("RGB")
-    hole_mask_np = build_hole_mask_from_valid_mask(render.valid_mask, dilate_px=dilate_px, close_px=close_px, min_area_px=min_area_px)
+    hole_mask_np = build_hole_mask_from_valid_mask(
+        render.valid_mask,
+        dilate_px=dilate_px,
+        close_px=close_px,
+        min_area_px=min_area_px,
+        exterior_only=exterior_only,
+        support_close_px=support_close_px,
+        support_dilate_px=support_dilate_px,
+    )
+    if fill_mask_rgb is not None:
+        masked_base_np = np.asarray(novel_img, dtype=np.uint8).copy()
+        masked_base_np[hole_mask_np > 0] = np.asarray(fill_mask_rgb, dtype=np.uint8)
+        novel_img = Image.fromarray(masked_base_np, mode="RGB")
     hole_mask = to_pil_mask(hole_mask_np)
     overlay = overlay_mask_on_image(novel_img, hole_mask)
     return novel_img, hole_mask, overlay

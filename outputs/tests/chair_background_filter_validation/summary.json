@@ -1,0 +1,19 @@
+{
+  "device": "mps",
+  "seed_paths": [
+    "outputs/tests/_frame_extract_probe/chair1_frame_000.png",
+    "outputs/tests/_frame_extract_probe/chair1_frame_001.png",
+    "outputs/tests/_frame_extract_probe/chair1_frame_002.png",
+    "outputs/tests/_frame_extract_probe/chair1_frame_003.png"
+  ],
+  "background_rgb": [
+    166.0,
+    159.0,
+    160.0
+  ],
+  "distance_threshold": 20.0,
+  "points_before": 20000,
+  "points_after": 2977,
+  "removed_points": 17023,
+  "removed_ratio": 0.85115
+}

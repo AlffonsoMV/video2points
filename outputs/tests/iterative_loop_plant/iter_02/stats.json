@@ -1,0 +1,82 @@
+{
+  "iteration_index": 2,
+  "seed": 3,
+  "device": "mps",
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "input_count_before_generation": 5,
+  "input_count_after_generation": 6,
+  "source_view": {
+    "index": 3,
+    "path": "data/image_04.png",
+    "saved_input_path": "outputs/tests/iterative_loop/iter_02/01_before/source_view_input.png",
+    "saved_render_path": "outputs/tests/iterative_loop/iter_02/01_before/source_view_render.png"
+  },
+  "coverage_before_generation": {
+    "largest_gap_deg": 309.1922581606478,
+    "target_gap_deg": 45.0,
+    "step_from_boundary_deg": 45.0,
+    "boundary_side": "gap_end",
+    "target_angle_deg": 312.8007049139087,
+    "camera_angles_deg": [
+      -2.1992950439453125,
+      -0.5665004253387451,
+      2.4250530827885086e-07,
+      4.303318977355957,
+      48.60844421386719
+    ],
+    "orbit_radius": 0.8981198668479919
+  },
+  "projection_stats_before": {
+    "projected_count": 109576,
+    "valid_ratio": 0.5396343865731621,
+    "hole_ratio": 0.6087286265857694
+  },
+  "flux_inputs": [
+    "outputs/tests/iterative_loop/iter_02/00_inputs/00_pos2_flux_base.png",
+    "outputs/tests/iterative_loop/iter_02/00_inputs/01_reference_generated_context.png",
+    "outputs/tests/iterative_loop/iter_02/00_inputs/02_reference_generated_context.png"
+  ],
+  "environment_anchor_paths": [
+    "data/image_01.png",
+    "data/image_02.png",
+    "data/image_03.png",
+    "data/image_04.png"
+  ],
+  "environment_anchor_sheet_path": "outputs/tests/iterative_loop/iter_02/00_inputs/01_environment_anchor_sheet.png",
+  "flux_output": {
+    "raw_path": "outputs/tests/iterative_loop/iter_02/03_flux/generated_raw.png",
+    "composited_path": "outputs/tests/iterative_loop/iter_02/03_flux/generated_composited.png",
+    "metadata": {
+      "reference_count": 2,
+      "model_id": "black-forest-labs/FLUX.2-klein-4B"
+    }
+  },
+  "pose_and_coverage_after": {
+    "largest_gap_after_deg": 306.71088117103346,
+    "gap_improvement_deg": 2.4813769896143185,
+    "predicted_angle_deg": -6.7600251979901484,
+    "min_angle_to_existing_deg": 4.351707113389411,
+    "target_pose_error": {
+      "rotation_error_deg": 39.28100630792584,
+      "translation_l2_normalized": 8.86644458770752,
+      "translation_direction_error_deg": 32.96260963202633,
+      "target_translation_norm": 10.691272735595703,
+      "predicted_translation_norm": 2.27876877784729,
+      "translation_norm_ratio_pred_over_target": 0.2131428908609093
+    }
+  },
+  "paths": {
+    "before_point_cloud_ply": "outputs/tests/iterative_loop/iter_02/01_before/point_cloud.ply",
+    "before_point_cloud_png": "outputs/tests/iterative_loop/iter_02/01_before/point_cloud.png",
+    "pos2_render_before": "outputs/tests/iterative_loop/iter_02/02_target_pos2/pos2_render_before.png",
+    "pos2_flux_base": "outputs/tests/iterative_loop/iter_02/02_target_pos2/pos2_flux_base.png",
+    "hole_mask": "outputs/tests/iterative_loop/iter_02/02_target_pos2/hole_mask.png",
+    "hole_mask_overlay": "outputs/tests/iterative_loop/iter_02/02_target_pos2/hole_mask_overlay.png",
+    "generated_raw": "outputs/tests/iterative_loop/iter_02/03_flux/generated_raw.png",
+    "generated_composited": "outputs/tests/iterative_loop/iter_02/03_flux/generated_composited.png",
+    "after_point_cloud_ply": "outputs/tests/iterative_loop/iter_02/04_after/point_cloud.ply",
+    "after_point_cloud_png": "outputs/tests/iterative_loop/iter_02/04_after/point_cloud.png",
+    "pos2_render_after": "outputs/tests/iterative_loop/iter_02/04_after/pos2_render_after.png"
+  }
+}

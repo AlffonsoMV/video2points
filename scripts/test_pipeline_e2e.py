@@ -69,13 +69,13 @@ def main() -> None:
     data_images = _list_data_images(cfg.data_dir)
     if len(data_images) < 2:
         raise RuntimeError(f"Need at least 2 images in {cfg.data_dir} for this test, found: {data_images}")
-    src_imgs = [utils.ensure_png_copy(p) for p in data_images[:2]]
+    src_imgs = [utils.ensure_png_copy(p) for p in data_images]
     print("Input images:")
     for p in src_imgs:
         print(" -", p)
     print(f"Device: {device}")
 
-    print("\n[1/6] Running initial two-view VGGT...")
+    print(f"\n[1/6] Running initial VGGT from {len(src_imgs)} original views...")
     model = utils.load_vggt_model(cfg.vggt_model_id, device=device)
     scene1 = utils.run_vggt_reconstruction(src_imgs, model=model, device=device, preprocess_mode=cfg.preprocess_mode)
     summary1 = utils.describe_scene(scene1)
@@ -90,7 +90,7 @@ def main() -> None:
         prefer_depth_unprojection=True,
         seed=cfg.seed,
     )
-    fig1, _ = utils.plot_point_cloud_3d(pts1, cols1, title="Initial Two-view VGGT Reconstruction", point_size=0.25)
+    fig1, _ = utils.plot_point_cloud_3d(pts1, cols1, title="Initial Multi-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig1, out_dir / "01_single_view_point_cloud.png")
     utils.save_point_cloud_ply(pts1, cols1, out_dir / "01_single_view_point_cloud.ply")
 
@@ -200,10 +200,10 @@ def main() -> None:
     if changed_unmasked != 0:
         raise RuntimeError("Unmasked pixels changed after compositing")
 
-    # Use the raw generated frame as the synthetic third view for augmentation.
+    # Use the raw generated frame as the synthetic extra view for augmentation.
     inpainted_path = out_dir / "05_inpaint_raw_generated.png"
 
-    print("\n[6/6] Running augmented VGGT (2 original views + inpainted novel view)...")
+    print(f"\n[6/6] Running augmented VGGT ({len(src_imgs)} original views + generated novel view)...")
     augmented_inputs = [*src_imgs, inpainted_path]
     print("Augmented inputs:")
     for p in augmented_inputs:

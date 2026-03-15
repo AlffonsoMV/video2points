@@ -2,7 +2,7 @@
 
 This repository wraps a small 3D vision pipeline around a vendored copy of VGGT. The main flow is:
 
-1. reconstruct geometry from one or two input images with VGGT,
+1. reconstruct geometry from the input images with VGGT,
 2. render a nearby novel camera view from the recovered point cloud,
 3. detect holes caused by missing geometry,
 4. inpaint only those holes,
@@ -12,7 +12,7 @@ This repository wraps a small 3D vision pipeline around a vendored copy of VGGT.
 
 - `utils.py`: shared pipeline code and the main `PipelineConfig`
 - `scripts/test_utils_synthetic.py`: fast smoke test for rendering, masking, and fallback inpainting
-- `scripts/test_pipeline_e2e.py`: full two-image pipeline on the images in `data/`
+- `scripts/test_pipeline_e2e.py`: full pipeline on the images in `data/`
 - `notebooks/vggt_coliseum_inpaint_pipeline.ipynb`: interactive notebook version of the full pipeline
 - `data/`: sample inputs (`image_01.png`, `image_02.png`)
 - `outputs/`: generated figures and intermediate artifacts
@@ -50,13 +50,13 @@ python -m scripts.test_utils_synthetic
 
 This writes debug images to `outputs/tests/synthetic/`.
 
-Run the full two-image pipeline:
+Run the full pipeline:
 
 ```bash
 python -m scripts.test_pipeline_e2e
 ```
 
-This uses the first two images in `data/`, downloads the VGGT and inpainting weights on first run, and saves outputs to `outputs/tests/e2e/`.
+This uses all image files in `data/`, downloads the VGGT and inpainting weights on first run, and saves outputs to `outputs/tests/e2e/`.
 
 ## What the full pipeline does
 
@@ -70,7 +70,7 @@ This uses the first two images in `data/`, downloads the VGGT and inpainting wei
 ## Using your own images
 
 - Put your images in `data/`, or change `PipelineConfig.data_dir`.
-- `scripts/test_pipeline_e2e.py` uses the first two image files it finds in that folder.
+- `scripts/test_pipeline_e2e.py` uses all image files it finds in that folder.
 - The single interactive notebook is [`notebooks/vggt_coliseum_inpaint_pipeline.ipynb`](notebooks/vggt_coliseum_inpaint_pipeline.ipynb).
 
 If you want an interactive run:
