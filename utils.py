@@ -136,6 +136,81 @@ def resolve_input_image(
     raise FileNotFoundError(f"Could not find {stem} with known suffixes in {data_dir}. Found: {existing}")
 
 
+def list_videos(
+    data_dir: str | Path = "data",
+    exts: Iterable[str] = (".mp4", ".mov", ".avi", ".mkv", ".MP4", ".MOV", ".AVI", ".MKV"),
+) -> list[Path]:
+    """Return sorted paths to video files in data_dir."""
+    data_dir = Path(data_dir)
+    if not data_dir.exists():
+        return []
+    exts_set = set(exts)
+    return sorted([p for p in data_dir.glob("*") if p.is_file() and p.suffix in exts_set])
+
+
+def extract_frame_from_video(
+    video_path: str | Path,
+    frame_index: int | str = "middle",
+) -> Image.Image:
+    """
+    Extract a single frame from a video.
+    frame_index: int (0-based), or "first", "middle", "last"
+    """
+    video_path = Path(video_path)
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video: {video_path}")
+
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total == 0:
+        raise RuntimeError(f"Video has no frames: {video_path}")
+
+    if frame_index == "first":
+        idx = 0
+    elif frame_index == "middle":
+        idx = total // 2
+    elif frame_index == "last":
+        idx = total - 1
+    else:
+        idx = int(frame_index)
+    idx = max(0, min(idx, total - 1))
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        raise RuntimeError(f"Cannot read frame {idx} from {video_path}")
+
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(frame, mode="RGB")
+
+
+def extract_frames_from_videos(
+    data_dir: str | Path = "data",
+    frame_index: int | str = "middle",
+    output_stem: str = "image",
+    overwrite: bool = True,
+) -> list[Path]:
+    """
+    Extract one frame from each video in data_dir, save as image_01.png, image_02.png, etc.
+    Returns list of saved image paths.
+    """
+    videos = list_videos(data_dir)
+    if not videos:
+        raise FileNotFoundError(f"No video files found in {data_dir}")
+    data_dir = Path(data_dir)
+    saved: list[Path] = []
+    for i, v in enumerate(videos, start=1):
+        out_path = data_dir / f"{output_stem}_{i:02d}.png"
+        if out_path.exists() and not overwrite:
+            saved.append(out_path)
+            continue
+        img = extract_frame_from_video(v, frame_index=frame_index)
+        save_pil(img, out_path)
+        saved.append(out_path)
+    return saved
+
+
 def ensure_png_copy(image_path: str | Path, target_name: str | None = None) -> Path:
     src = Path(image_path)
     target = src.with_suffix(".png") if target_name is None else src.parent / target_name
