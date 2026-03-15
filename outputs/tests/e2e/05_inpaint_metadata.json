@@ -1,0 +1,19 @@
+{
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "model_id": "black-forest-labs/FLUX.2-klein-4B",
+  "device": "mps",
+  "seed": 1,
+  "reference_images": [
+    "data/image_01.png",
+    "data/image_02.png"
+  ],
+  "input_image": "outputs/tests/e2e/04_novel_view_input.png",
+  "mask_image": "outputs/tests/e2e/04_hole_mask.png",
+  "num_inference_steps": 4,
+  "guidance_scale": 1.0,
+  "metadata": {
+    "reference_count": 2,
+    "model_id": "black-forest-labs/FLUX.2-klein-4B"
+  }
+}

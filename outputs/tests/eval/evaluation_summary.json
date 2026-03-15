@@ -1,0 +1,178 @@
+{
+  "novel_view_regeneration": {
+    "augmented_inputs": [
+      "data/image_01.png",
+      "data/image_02.png",
+      "outputs/tests/e2e/05_inpaint_raw_generated.png"
+    ],
+    "same_pose_target": "outputs/tests/e2e/05_inpaint_raw_generated.png",
+    "baseline_render": "outputs/tests/e2e/03_novel_view_projection.png",
+    "augmented_rerender": "outputs/tests/eval/novel_view_regeneration/01_augmented_same_pose_rerender.png",
+    "same_pose_metrics": {
+      "baseline_render_vs_generated_target": {
+        "psnr": 7.352518954767019,
+        "ssim": 0.21897025406360626,
+        "lpips": 0.646681547164917,
+        "reference_size": [
+          518,
+          392
+        ],
+        "candidate_original_size": [
+          518,
+          392
+        ],
+        "candidate_resized_to_reference": false
+      },
+      "augmented_rerender_vs_generated_target": {
+        "psnr": 7.694210254620554,
+        "ssim": 0.2378934770822525,
+        "lpips": 0.6696016192436218,
+        "reference_size": [
+          518,
+          392
+        ],
+        "candidate_original_size": [
+          518,
+          392
+        ],
+        "candidate_resized_to_reference": false
+      },
+      "improvement_over_baseline": {
+        "psnr": 0.34169129985353486,
+        "ssim": 0.01892322301864624,
+        "lpips": -0.022920072078704834
+      }
+    },
+    "camera_pose_metrics": {
+      "note": "Pose comparisons use camera-0-relative geometry and baseline-normalized translations so the result is meaningful even if the two reconstructions use slightly different global frames or scales.",
+      "target_vs_predicted_third": {
+        "rotation_error_deg": 3.086408673210988,
+        "translation_l2_normalized": 1.450822353363037,
+        "translation_direction_error_deg": 38.53643667115858,
+        "target_translation_norm": 1.5955748558044434,
+        "predicted_translation_norm": 0.19132602214813232,
+        "translation_norm_ratio_pred_over_target": 0.11991040185430298
+      },
+      "original_second_vs_predicted_third": {
+        "rotation_error_deg": 2.5580241544575735,
+        "translation_l2_normalized": 0.8442156314849854,
+        "translation_direction_error_deg": 32.169659596103266,
+        "target_translation_norm": 0.9999999403953552,
+        "predicted_translation_norm": 0.19132602214813232,
+        "translation_norm_ratio_pred_over_target": 0.19132603355205258
+      },
+      "intrinsic_error": {
+        "focal_l2": 16.33739471435547,
+        "principal_point_l2": 0.0,
+        "predicted_focal": [
+          373.6570739746094,
+          374.75445556640625
+        ],
+        "target_focal": [
+          385.0187683105469,
+          386.4942321777344
+        ],
+        "predicted_principal_point": [
+          259.0,
+          196.0
+        ],
+        "target_principal_point": [
+          259.0,
+          196.0
+        ]
+      }
+    },
+    "cross_view_reference_metrics": {
+      "image_01.png": {
+        "note": "Different viewpoints. These numbers are only rough references, not a proper image-quality metric.",
+        "baseline_render_vs_original": {
+          "psnr": 7.741069570368673,
+          "ssim": 0.2511600852012634,
+          "lpips": 0.6711066365242004,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        },
+        "augmented_rerender_vs_original": {
+          "psnr": 8.037500173623984,
+          "ssim": 0.2587359547615051,
+          "lpips": 0.6911348104476929,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        },
+        "generated_target_vs_original": {
+          "psnr": 18.40764472772861,
+          "ssim": 0.6398976445198059,
+          "lpips": 0.19161467254161835,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        }
+      },
+      "image_02.png": {
+        "note": "Different viewpoints. These numbers are only rough references, not a proper image-quality metric.",
+        "baseline_render_vs_original": {
+          "psnr": 7.622025727424323,
+          "ssim": 0.2610512971878052,
+          "lpips": 0.6481320858001709,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        },
+        "augmented_rerender_vs_original": {
+          "psnr": 7.909360183391647,
+          "ssim": 0.26360058784484863,
+          "lpips": 0.6717099547386169,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        },
+        "generated_target_vs_original": {
+          "psnr": 16.731104986319913,
+          "ssim": 0.47405076026916504,
+          "lpips": 0.23733721673488617,
+          "reference_size": [
+            706,
+            529
+          ],
+          "candidate_original_size": [
+            518,
+            392
+          ],
+          "candidate_resized_to_reference": true
+        }
+      }
+    }
+  }
+}

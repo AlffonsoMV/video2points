@@ -27,6 +27,7 @@ from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 
 _VGGT_MODEL_CACHE: dict[tuple[str, str], VGGT] = {}
 _INPAINT_PIPE_CACHE: dict[tuple[str, str, str], Any] = {}
+_LPIPS_MODEL_CACHE: dict[tuple[str, str], Any] = {}
 
 
 @dataclass
@@ -327,6 +328,44 @@ def build_point_cloud_from_scene(
         conf_kept = conf_kept[idx]
 
     return pts.astype(np.float32), cols.astype(np.float32), conf_kept.astype(np.float32)
+
+
+def merge_scene_point_cloud(
+    scene: dict[str, Any],
+    view_indices: Iterable[int] | None = None,
+    prefer_depth_unprojection: bool = True,
+    conf_percentile: float = 50.0,
+    max_points: int | None = None,
+    rng_seed: int = 0,
+) -> tuple[np.ndarray, np.ndarray]:
+    total_views = int(np.asarray(scene["extrinsic"]).shape[0])
+    indices = list(view_indices) if view_indices is not None else list(range(total_views))
+
+    pts_all, cols_all = [], []
+    for idx in indices:
+        pts, cols, _ = build_point_cloud_from_scene(
+            scene,
+            view_idx=idx,
+            prefer_depth_unprojection=prefer_depth_unprojection,
+            conf_percentile=conf_percentile,
+            max_points=None,
+            rng_seed=rng_seed,
+        )
+        if len(pts):
+            pts_all.append(pts)
+            cols_all.append(cols)
+
+    if not pts_all:
+        return np.empty((0, 3), dtype=np.float32), np.empty((0, 3), dtype=np.float32)
+
+    pts = np.concatenate(pts_all, axis=0).astype(np.float32)
+    cols = np.concatenate(cols_all, axis=0).astype(np.float32)
+    if max_points is not None and len(pts) > max_points:
+        rng = np.random.default_rng(rng_seed)
+        idx = rng.choice(len(pts), size=max_points, replace=False)
+        pts = pts[idx]
+        cols = cols[idx]
+    return pts, cols
 
 
 def plot_point_cloud_3d(
@@ -745,6 +784,12 @@ def _composite_preserve_unmasked(
     out = orig.copy()
     out[m] = gen[m]
     return np_to_pil_rgb(out)
+
+
+def _coerce_image_rgb(image: Image.Image | str | Path) -> Image.Image:
+    if isinstance(image, Image.Image):
+        return image.convert("RGB")
+    return Image.open(image).convert("RGB")
 
 
 def _pil_to_base64_png(image: Image.Image) -> str:
@@ -1223,6 +1268,62 @@ def prepare_novel_view_inpainting_inputs(
     hole_mask = to_pil_mask(hole_mask_np)
     overlay = overlay_mask_on_image(novel_img, hole_mask)
     return novel_img, hole_mask, overlay
+
+
+def load_lpips_model(net: str = "alex", device: str = "cpu", use_cache: bool = True) -> Any:
+    import lpips
+
+    cache_key = (net, device)
+    if use_cache and cache_key in _LPIPS_MODEL_CACHE:
+        return _LPIPS_MODEL_CACHE[cache_key]
+
+    model = lpips.LPIPS(net=net)
+    model.eval()
+    model.to(device)
+
+    if use_cache:
+        _LPIPS_MODEL_CACHE[cache_key] = model
+    return model
+
+
+def compute_image_metrics(
+    reference: Image.Image | str | Path,
+    candidate: Image.Image | str | Path,
+    lpips_net: str = "alex",
+    lpips_device: str = "cpu",
+) -> dict[str, Any]:
+    from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+
+    ref_img = _coerce_image_rgb(reference)
+    cand_img = _coerce_image_rgb(candidate)
+    cand_original_size = cand_img.size
+    resized_candidate = False
+    if cand_img.size != ref_img.size:
+        cand_img = cand_img.resize(ref_img.size, Image.Resampling.LANCZOS)
+        resized_candidate = True
+
+    ref_np = np.asarray(ref_img, dtype=np.float32) / 255.0
+    cand_np = np.asarray(cand_img, dtype=np.float32) / 255.0
+
+    psnr = float(peak_signal_noise_ratio(ref_np, cand_np, data_range=1.0))
+    ssim = float(structural_similarity(ref_np, cand_np, channel_axis=2, data_range=1.0))
+
+    lpips_model = load_lpips_model(net=lpips_net, device=lpips_device)
+    ref_tensor = torch.from_numpy(ref_np).permute(2, 0, 1).unsqueeze(0).to(lpips_device)
+    cand_tensor = torch.from_numpy(cand_np).permute(2, 0, 1).unsqueeze(0).to(lpips_device)
+    ref_tensor = ref_tensor * 2.0 - 1.0
+    cand_tensor = cand_tensor * 2.0 - 1.0
+    with torch.no_grad():
+        lpips_value = float(lpips_model(ref_tensor, cand_tensor).item())
+
+    return {
+        "psnr": psnr,
+        "ssim": ssim,
+        "lpips": lpips_value,
+        "reference_size": list(ref_img.size),
+        "candidate_original_size": list(cand_original_size),
+        "candidate_resized_to_reference": resized_candidate,
+    }
 
 
 def save_matplotlib_figure(fig: plt.Figure, path: str | Path, dpi: int = 150, close: bool = True) -> Path:

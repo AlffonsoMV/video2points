@@ -59,7 +59,7 @@ def main() -> None:
         inpaint_model_id="black-forest-labs/FLUX.2-klein-4B",
         inpaint_steps=4,  # FLUX2-klein local smoke-test speed
         inpaint_guidance_scale=1.0,
-        seed=0,
+        seed=1,
     )
 
     utils.seed_everything(cfg.seed)
@@ -171,6 +171,24 @@ def main() -> None:
     )
     utils.save_pil(inpaint.raw_generated, out_dir / "05_inpaint_raw_generated.png")
     utils.save_pil(inpaint.composited, out_dir / "05_inpaint_composited.png")
+    (out_dir / "05_inpaint_metadata.json").write_text(
+        json.dumps(
+            {
+                "backend": inpaint.backend,
+                "resized_for_model": inpaint.resized_for_model,
+                "model_id": cfg.inpaint_model_id,
+                "device": device,
+                "seed": cfg.seed,
+                "reference_images": [str(p) for p in src_imgs],
+                "input_image": str(out_dir / "04_novel_view_input.png"),
+                "mask_image": str(out_dir / "04_hole_mask.png"),
+                "num_inference_steps": cfg.inpaint_steps,
+                "guidance_scale": cfg.inpaint_guidance_scale,
+                "metadata": inpaint.metadata,
+            },
+            indent=2,
+        )
+    )
     print(f"Inpainting backend={inpaint.backend}, resized_for_model={inpaint.resized_for_model}")
 
     # Verify compositing preserved unmasked pixels exactly.
@@ -182,13 +200,18 @@ def main() -> None:
     if changed_unmasked != 0:
         raise RuntimeError("Unmasked pixels changed after compositing")
 
-    inpainted_path = out_dir / "05_inpaint_composited.png"
+    # Use the raw generated frame as the synthetic third view for augmentation.
+    inpainted_path = out_dir / "05_inpaint_raw_generated.png"
 
     print("\n[6/6] Running augmented VGGT (2 original views + inpainted novel view)...")
+    augmented_inputs = [*src_imgs, inpainted_path]
+    print("Augmented inputs:")
+    for p in augmented_inputs:
+        print(" -", p)
     utils.clear_loaded_model_caches()
     model2 = utils.load_vggt_model(cfg.vggt_model_id, device=device)
     scene2 = utils.run_vggt_reconstruction(
-        [*src_imgs, inpainted_path],
+        augmented_inputs,
         model=model2,
         device=device,
         preprocess_mode=cfg.preprocess_mode,
@@ -208,6 +231,15 @@ def main() -> None:
     fig2, _ = utils.plot_point_cloud_3d(pts2, cols2, title="Augmented Multi-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig2, out_dir / "06_two_view_point_cloud.png")
     utils.save_point_cloud_ply(pts2, cols2, out_dir / "06_two_view_point_cloud.ply")
+    comparison_fig, _ = utils.plot_image_grid(
+        [
+            utils.load_pil_rgb(out_dir / "01_single_view_point_cloud.png"),
+            utils.load_pil_rgb(out_dir / "06_two_view_point_cloud.png"),
+        ],
+        titles=["Initial reconstruction", "Augmented reconstruction"],
+        figsize=(14, 6),
+    )
+    utils.save_matplotlib_figure(comparison_fig, out_dir / "07_point_cloud_comparison.png")
 
     print("\nE2E smoke test finished successfully.")
     print(f"Artifacts saved in: {out_dir.resolve()}")
