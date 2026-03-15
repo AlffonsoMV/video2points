@@ -1,0 +1,25 @@
+# Python 3.10+ required
+# Run from the repository root. Install the vendored VGGT first:
+#   pip install -e vendor/vggt
+
+torch
+torchvision
+opencv-python
+matplotlib
+scipy
+requests
+accelerate
+transformers
+
+# Pillow is pulled in by the packages above but listed explicitly for clarity
+Pillow
+
+# Local FLUX.2-klein backend requires the diffusers main branch (Flux2KleinPipeline
+# is not in the published release as of diffusers==0.32.2):
+#   pip install --upgrade --no-cache-dir git+https://github.com/huggingface/diffusers.git@main
+#
+# For the standard SD-XL inpainting backend the stable release is sufficient:
+diffusers
+
+# Notebook support (optional, only needed to run the .ipynb)
+jupyterlab
