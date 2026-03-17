@@ -237,6 +237,7 @@ def run_orbit_pipeline(
                 dilate_px=cfg.mask_dilate_px,
                 min_area_px=cfg.mask_min_area_px,
                 shrink_px=cfg.mask_shrink_px,
+                all_invalid=cfg.mask_all_invalid,
             )
             utils.save_pil(hole_mask, view_dir / "02_hole_mask.png")
             hole_overlay_colored = utils.overlay_mask_by_hole_size(
@@ -324,11 +325,12 @@ def run_orbit_pipeline(
                     negative_prompt=cfg.inpaint_negative_prompt,
                     model_id=cfg.inpaint_model_id,
                     device=device,
-                    num_inference_steps=max(cfg.inpaint_steps, 50),
+                    num_inference_steps=cfg.inpaint_steps,
                     guidance_scale=cfg.inpaint_guidance_scale,
                     strength=1.0,
                     seed=cfg.seed + generated_count,
                     allow_fallback_to_opencv=True,
+                    reference_images=flux_refs or None,
                 )
                 final_image = inpaint_result.composited
                 utils.save_pil(final_image, view_dir / "06_inpainted.png")
@@ -383,6 +385,14 @@ def run_orbit_pipeline(
     )
     utils.ensure_dir(dir_final(out_dir))
     utils.save_matplotlib_figure(fig_final, dir_final(out_dir) / "point_cloud.png")
+
+    final_pts, final_cols = utils.merge_scene_point_cloud(
+        scene, view_indices=list(range(len(image_paths))),
+        conf_percentile=cfg.vggt_conf_percentile, max_points=cfg.max_points_plot, rng_seed=cfg.seed,
+    )
+    ply_path = dir_final(out_dir) / "point_cloud.ply"
+    utils.save_point_cloud_ply(final_pts, final_cols, ply_path)
+    print(f"  Point cloud saved to {ply_path} ({len(final_pts):,} points)")
 
     # -- 5. Manifest and structure doc -------------------------------------
     manifest = {

@@ -36,9 +36,10 @@ class PipelineConfig:
     mask_shrink_px: int | None = 5  # Erode silhouette to reduce mask at edges. None = close_px//2
     mask_min_area_px: int = 2
     mask_exterior_only: bool = False
+    mask_all_invalid: bool = False
     mask_fill_rgb: tuple[int, int, int] | None = None
-    inpaint_steps: int = 75
-    inpaint_guidance_scale: float = 10
+    inpaint_steps: int = 20
+    inpaint_guidance_scale: float = 30.0
     inpaint_prompt: str = (
         "Photorealistic continuation, 4K ultra-HD, sharp and detailed. In focus, in foreground, "
         "extremely sharp. Fill only missing regions and preserve visible content, lighting, geometry, and textures."

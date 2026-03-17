@@ -31,6 +31,7 @@ def build_hole_mask_from_valid_mask(
     min_area_px: int = 2,
     shrink_px: int | None = None,
     exterior_only: bool = False,
+    all_invalid: bool = False,
 ) -> np.ndarray:
     """Build hole mask using flood-fill to classify interior vs exterior.
 
@@ -38,33 +39,39 @@ def build_hole_mask_from_valid_mask(
     2. ``binary_fill_holes`` fills regions not connected to the image border,
        producing a solid object silhouette.
     3. Interior holes = inside the silhouette but missing valid data.
+
+    If *all_invalid* is True, every pixel without projected geometry is masked
+    (both interior holes and exterior background).
     """
     from scipy.ndimage import binary_fill_holes
 
     valid = np.asarray(valid_mask, dtype=bool)
 
-    closed = valid.astype(np.uint8) * 255
-    if close_px > 0:
-        k = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1),
-        )
-        closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE, k)
-
-    silhouette = binary_fill_holes(closed > 0)
-
-    shrink = shrink_px if shrink_px is not None else close_px // 2
-    if shrink > 0:
-        ek = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (2 * shrink + 1, 2 * shrink + 1),
-        )
-        silhouette = cv2.erode(
-            silhouette.astype(np.uint8), ek,
-        ).astype(bool)
-
-    if exterior_only:
-        hole_mask = (~silhouette & ~valid).astype(np.uint8) * 255
+    if all_invalid:
+        hole_mask = (~valid).astype(np.uint8) * 255
     else:
-        hole_mask = (silhouette & ~valid).astype(np.uint8) * 255
+        closed = valid.astype(np.uint8) * 255
+        if close_px > 0:
+            k = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1),
+            )
+            closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE, k)
+
+        silhouette = binary_fill_holes(closed > 0)
+
+        shrink = shrink_px if shrink_px is not None else close_px // 2
+        if shrink > 0:
+            ek = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * shrink + 1, 2 * shrink + 1),
+            )
+            silhouette = cv2.erode(
+                silhouette.astype(np.uint8), ek,
+            ).astype(bool)
+
+        if exterior_only:
+            hole_mask = (~silhouette & ~valid).astype(np.uint8) * 255
+        else:
+            hole_mask = (silhouette & ~valid).astype(np.uint8) * 255
 
     if min_area_px > 1:
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
@@ -93,6 +100,7 @@ def prepare_novel_view_inpainting_inputs(
     min_area_px: int = 2,
     shrink_px: int | None = None,
     exterior_only: bool = False,
+    all_invalid: bool = False,
     fill_mask_rgb: tuple[int, int, int] | None = None,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
     novel_img = render.image.convert("RGB")
@@ -103,6 +111,7 @@ def prepare_novel_view_inpainting_inputs(
         min_area_px=min_area_px,
         shrink_px=shrink_px,
         exterior_only=exterior_only,
+        all_invalid=all_invalid,
     )
 
     if fill_mask_rgb is not None:
