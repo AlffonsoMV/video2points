@@ -510,6 +510,8 @@ def scene_summary_payload(scene: dict[str, Any], image_paths: list[Path]) -> dic
 
 
 def camera_baseline_scale(extrinsics: np.ndarray, idx_a: int = 0, idx_b: int = 1) -> float:
+    if len(extrinsics) <= max(idx_a, idx_b):
+        return 1.0
     c_a = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_a], dtype=np.float32))
     c_b = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_b], dtype=np.float32))
     return float(np.linalg.norm(c_b - c_a))
@@ -597,13 +599,19 @@ def build_camera_on_orbit(
 
     x_cam = np.cross(z_cam, orbit.normal)
     x_norm = np.linalg.norm(x_cam)
-    if x_norm < 1e-6:
+    if not np.isfinite(x_norm) or x_norm < 1e-6:
         arb = np.array([1, 0, 0], dtype=np.float32)
         if abs(np.dot(z_cam, arb)) > 0.9:
             arb = np.array([0, 1, 0], dtype=np.float32)
         x_cam = np.cross(z_cam, arb)
         x_norm = np.linalg.norm(x_cam)
-    x_cam = x_cam / x_norm
+    if not np.isfinite(x_norm) or x_norm < 1e-6:
+        fallback_axis = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        if abs(float(np.dot(fallback_axis, z_cam))) > 0.9:
+            fallback_axis = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        x_cam = fallback_axis - np.dot(fallback_axis, z_cam) * z_cam
+        x_norm = np.linalg.norm(x_cam)
+    x_cam = x_cam / max(float(x_norm), 1e-8)
     y_cam = np.cross(z_cam, x_cam)
 
     r_world_from_cam = np.column_stack([x_cam, y_cam, z_cam]).astype(np.float32)
@@ -871,9 +879,6 @@ def generate_iteration(
         support_dilate_px=pipeline_cfg.mask_support_dilate_px,
         fill_mask_rgb=pipeline_cfg.mask_fill_rgb,
     )
-    novel_input_path = utils.save_pil(novel_input, target_dir / "pos2_flux_base.png")
-    hole_mask_path = utils.save_pil(hole_mask, target_dir / "hole_mask.png")
-    hole_overlay_path = utils.save_pil(hole_overlay, target_dir / "hole_mask_overlay.png")
     environment_anchor_sheet = build_environment_anchor_sheet(
         anchor_paths,
         output_size=(novel_input.size[0], novel_input.size[1]),
@@ -892,28 +897,48 @@ def generate_iteration(
         target_angle_rad=orbit_plan.target_angle_rad,
         max_reference_images=loop_cfg.max_reference_images,
     )
-    reference_images_for_generation: list[Any] = [novel_render.image]
+    generation_base_image = novel_input
+    generation_overlay = hole_overlay
+    sparse_render_valid_ratio = float(novel_render.valid_mask.mean())
+    sparse_render_is_informative = novel_render.projected_count > 0 and sparse_render_valid_ratio >= 0.02
+    reference_images_for_generation: list[Any] = []
+    if sparse_render_is_informative:
+        reference_images_for_generation.append(novel_render.image)
+    else:
+        generation_base_image = source_render.image.convert("RGB")
+        if generation_base_image.size != novel_input.size:
+            generation_base_image = generation_base_image.resize(novel_input.size, Image.Resampling.LANCZOS)
+        generation_overlay = utils.overlay_mask_on_image(generation_base_image, hole_mask)
+
+    novel_input_path = utils.save_pil(generation_base_image, target_dir / "pos2_flux_base.png")
+    hole_mask_path = utils.save_pil(hole_mask, target_dir / "hole_mask.png")
+    hole_overlay_path = utils.save_pil(generation_overlay, target_dir / "hole_mask_overlay.png")
     if environment_anchor_sheet is not None:
         reference_images_for_generation.append(environment_anchor_sheet)
     reference_images_for_generation.extend(extra_reference_images)
-    flux_input_paths = save_flux_inputs(inputs_dir, novel_input, reference_images_for_generation)
+    flux_input_paths = save_flux_inputs(inputs_dir, generation_base_image, reference_images_for_generation)
     generation_prompt = build_generation_prompt(
         pipeline_cfg.inpaint_prompt,
         uses_anchor_sheet=environment_anchor_sheet is not None,
     )
 
     inpaint = utils.inpaint_with_diffusion(
-        image=novel_input,
+        image=generation_base_image,
         mask=hole_mask,
         prompt=generation_prompt,
         negative_prompt=pipeline_cfg.inpaint_negative_prompt,
         model_id=pipeline_cfg.inpaint_model_id,
         device=utils.get_device(),
         reference_images=reference_images_for_generation,
+        backend=pipeline_cfg.inpaint_backend,
         num_inference_steps=pipeline_cfg.inpaint_steps,
         guidance_scale=pipeline_cfg.inpaint_guidance_scale,
         seed=step_seed,
         allow_fallback_to_opencv=False,
+        openrouter_api_key_env=pipeline_cfg.openrouter_api_key_env,
+        openrouter_api_base_url=pipeline_cfg.openrouter_api_base_url,
+        openrouter_timeout_seconds=pipeline_cfg.openrouter_timeout_seconds,
+        openrouter_image_size=pipeline_cfg.openrouter_image_size,
     )
     generated_raw_path = utils.save_pil(inpaint.raw_generated, flux_dir / "generated_raw.png")
     generated_composited_path = utils.save_pil(inpaint.composited, flux_dir / "generated_composited.png")
@@ -1004,8 +1029,14 @@ def generate_iteration(
         },
         "projection_stats_before": {
             "projected_count": int(novel_render.projected_count),
-            "valid_ratio": float(novel_render.valid_mask.mean()),
+            "valid_ratio": sparse_render_valid_ratio,
             "hole_ratio": float((np.asarray(hole_mask) > 0).mean()),
+            "sparse_render_used_as_reference": sparse_render_is_informative,
+            "fallback_base_image": (
+                "source_view_render"
+                if not sparse_render_is_informative
+                else "novel_sparse_render"
+            ),
         },
         "flux_inputs": flux_input_paths,
         "environment_anchor_paths": [str(p) for p in anchor_paths],
@@ -1073,6 +1104,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--video-frame-count", type=int, default=4)
     parser.add_argument("--subject", type=str, default=None)
     parser.add_argument("--inpaint-prompt", type=str, default=None)
+    parser.add_argument("--inpaint-model-id", type=str, default="black-forest-labs/FLUX.2-klein-4B")
+    parser.add_argument("--inpaint-backend", type=str, default="auto")
+    parser.add_argument("--vggt-conf-percentile", type=float, default=55.0)
+    parser.add_argument("--max-points-plot", type=int, default=20000)
+    parser.add_argument("--max-points-render", type=int, default=120000)
     parser.add_argument("--background-color-distance", type=float, default=None)
     parser.add_argument("--background-border-px", type=int, default=24)
     parser.add_argument("--disable-input-background-masking", action="store_true")
@@ -1111,11 +1147,12 @@ def main() -> None:
     pipeline_cfg = utils.PipelineConfig(
         data_dir=str(Path(args.video_path).parent) if args.video_path else args.data_dir,
         preprocess_mode="crop",
-        vggt_conf_percentile=55.0,
-        max_points_plot=20000,
-        max_points_render=120000,
+        vggt_conf_percentile=args.vggt_conf_percentile,
+        max_points_plot=args.max_points_plot,
+        max_points_render=args.max_points_render,
         render_point_radius=2,
-        inpaint_model_id="black-forest-labs/FLUX.2-klein-4B",
+        inpaint_model_id=args.inpaint_model_id,
+        inpaint_backend=args.inpaint_backend,
         inpaint_steps=6,
         inpaint_guidance_scale=1.0,
         inpaint_prompt=args.inpaint_prompt or default_inpaint_prompt(inferred_subject, video_mode=args.video_path is not None),

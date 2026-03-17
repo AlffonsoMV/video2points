@@ -1,0 +1,55 @@
+{
+  "device": "mps",
+  "image_paths": [
+    "data/picture_single/image_picture.png",
+    "outputs/tests/iterative_loop_picture_inputfix_probe/iter_01/03_flux/generated_raw.png"
+  ],
+  "image_hw": [
+    308,
+    518
+  ],
+  "preprocessed_shape": [
+    2,
+    3,
+    308,
+    518
+  ],
+  "depth_shape": [
+    2,
+    308,
+    518,
+    1
+  ],
+  "depth_conf_shape": [
+    2,
+    308,
+    518
+  ],
+  "world_points_shape": [
+    2,
+    308,
+    518,
+    3
+  ],
+  "world_points_conf_shape": [
+    2,
+    308,
+    518
+  ],
+  "world_points_from_depth_shape": [
+    2,
+    308,
+    518,
+    3
+  ],
+  "extrinsic_shape": [
+    2,
+    3,
+    4
+  ],
+  "intrinsic_shape": [
+    2,
+    3,
+    3
+  ]
+}

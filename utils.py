@@ -36,13 +36,17 @@ class PipelineConfig:
     input_image_stem: str = "image_01"
     vggt_model_id: str = "facebook/VGGT-1B"
     inpaint_model_id: str = "black-forest-labs/FLUX.2-klein-4B"
-    inpaint_backend: str = "auto"  # auto | diffusers | flux2_klein_bfl
+    inpaint_backend: str = "auto"  # auto | diffusers | flux2_klein_bfl | flux2_klein_local | openrouter_image
     bfl_api_base_url: str = "https://api.bfl.ai"
     bfl_api_key_env: str = "BFL_API_KEY"
     bfl_poll_interval_seconds: float = 1.0
     bfl_timeout_seconds: int = 600
     bfl_safety_tolerance: int = 2
     bfl_output_format: str = "png"
+    openrouter_api_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_api_key_env: str = "OPENROUTER_API_KEY"
+    openrouter_timeout_seconds: int = 300
+    openrouter_image_size: str = "1K"
     preprocess_mode: str = "crop"
     vggt_conf_percentile: float = 50.0
     max_points_plot: int = 30000
@@ -1120,6 +1124,10 @@ def _pil_to_base64_png(image: Image.Image) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+def _pil_to_data_url_png(image: Image.Image) -> str:
+    return f"data:image/png;base64,{_pil_to_base64_png(image)}"
+
+
 def _looks_like_bfl_flux2_klein(model_id: str) -> bool:
     mid = (model_id or "").strip().lower()
     return (
@@ -1129,6 +1137,11 @@ def _looks_like_bfl_flux2_klein(model_id: str) -> bool:
     )
 
 
+def _looks_like_openrouter_image_model(model_id: str) -> bool:
+    mid = (model_id or "").strip().lower()
+    return mid.startswith("google/") and "image" in mid
+
+
 def _normalize_bfl_flux2_klein_endpoint(model_id: str) -> str:
     mid = (model_id or "").strip()
     if mid.startswith("bfl:"):
@@ -1136,6 +1149,69 @@ def _normalize_bfl_flux2_klein_endpoint(model_id: str) -> str:
     if not mid.startswith("flux-2-klein-"):
         raise ValueError(f"Unsupported FLUX2-klein model id '{model_id}'. Expected e.g. 'bfl:flux-2-klein-9b'.")
     return mid
+
+
+def _closest_supported_aspect_ratio(size: tuple[int, int]) -> str:
+    width, height = size
+    if width <= 0 or height <= 0:
+        return "1:1"
+
+    supported = [
+        "1:1",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        "1:4",
+        "4:1",
+        "1:8",
+        "8:1",
+    ]
+    target = float(width) / float(height)
+
+    def ratio_value(label: str) -> float:
+        num, den = label.split(":")
+        return float(num) / float(den)
+
+    return min(supported, key=lambda label: abs(ratio_value(label) - target))
+
+
+def _extract_openrouter_image_url(message: dict[str, Any]) -> str | None:
+    images = message.get("images")
+    if not isinstance(images, list):
+        return None
+
+    for item in images:
+        if not isinstance(item, dict):
+            continue
+        for candidate in (item.get("image_url"), item.get("imageUrl"), item.get("url")):
+            if isinstance(candidate, dict):
+                url = candidate.get("url")
+                if isinstance(url, str) and url:
+                    return url
+            if isinstance(candidate, str) and candidate:
+                return candidate
+    return None
+
+
+def _decode_image_from_url_or_data_url(url: str) -> Image.Image:
+    if url.startswith("data:"):
+        try:
+            _, encoded = url.split(",", 1)
+        except ValueError as exc:
+            raise RuntimeError("Malformed data URL returned by OpenRouter.") from exc
+        return Image.open(io.BytesIO(base64.b64decode(encoded))).convert("RGB")
+
+    import requests
+
+    resp = requests.get(url, timeout=120)
+    resp.raise_for_status()
+    return Image.open(io.BytesIO(resp.content)).convert("RGB")
 
 
 def opencv_inpaint_fallback(image: Image.Image, mask: Image.Image, radius: int = 3) -> Image.Image:
@@ -1167,6 +1243,122 @@ def _load_reference_images(reference_images: Iterable[Image.Image | str | Path] 
         else:
             refs.append(Image.open(ref).convert("RGB"))
     return refs
+
+
+def inpaint_with_openrouter_image(
+    image: Image.Image,
+    mask: Image.Image,
+    prompt: str,
+    negative_prompt: str | None = None,
+    model_id: str = "google/gemini-3.1-flash-image-preview",
+    reference_images: Iterable[Image.Image | str | Path] | None = None,
+    seed: int = 0,
+    guidance_scale: float = 1.0,
+    openrouter_api_key: str | None = None,
+    openrouter_api_key_env: str = "OPENROUTER_API_KEY",
+    openrouter_api_base_url: str = "https://openrouter.ai/api/v1",
+    openrouter_timeout_seconds: int = 300,
+    openrouter_image_size: str = "1K",
+) -> InpaintResult:
+    import requests
+
+    del seed, guidance_scale
+
+    image = image.convert("RGB")
+    mask = mask.convert("L")
+    refs = _load_reference_images(reference_images)
+
+    api_key = openrouter_api_key or os.getenv(openrouter_api_key_env)
+    if not api_key:
+        raise RuntimeError(
+            f"Missing OpenRouter API key. Set {openrouter_api_key_env} or pass openrouter_api_key."
+        )
+
+    masked_base = _composite_preserve_unmasked(
+        image,
+        Image.new("RGB", image.size, (255, 255, 255)),
+        mask,
+    )
+
+    prompt_parts = [
+        prompt.strip(),
+        "The first input image is the editable target view.",
+        "White regions in that first image are missing content that must be completed.",
+        "Preserve all non-white visible content, layout, camera framing, and geometry from that first image.",
+    ]
+    if negative_prompt:
+        prompt_parts.append(f"Avoid: {negative_prompt.strip()}.")
+    request_prompt = " ".join(part for part in prompt_parts if part)
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": request_prompt}]
+    for img in [masked_base, *refs]:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {"url": _pil_to_data_url_png(img)},
+            }
+        )
+
+    payload: dict[str, Any] = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": content}],
+        "modalities": ["image", "text"],
+        "stream": False,
+        "image_config": {
+            "aspect_ratio": _closest_supported_aspect_ratio(image.size),
+            "image_size": openrouter_image_size,
+        },
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    url = f"{openrouter_api_base_url.rstrip('/')}/chat/completions"
+    resp = requests.post(url, headers=headers, json=payload, timeout=float(openrouter_timeout_seconds))
+    resp.raise_for_status()
+    result = resp.json()
+
+    choices = result.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError(f"OpenRouter returned no choices: {result}")
+
+    message = choices[0].get("message", {})
+    if not isinstance(message, dict):
+        raise RuntimeError(f"OpenRouter returned malformed message: {result}")
+
+    image_url = _extract_openrouter_image_url(message)
+    if not image_url:
+        raise RuntimeError(f"OpenRouter response contained no generated image: {result}")
+
+    raw = _decode_image_from_url_or_data_url(image_url)
+    resized_for_model = raw.size != image.size
+    if resized_for_model:
+        raw = raw.resize(image.size, Image.Resampling.LANCZOS)
+    composited = _composite_preserve_unmasked(image, raw, mask)
+
+    assistant_text = message.get("content")
+    if isinstance(assistant_text, list):
+        assistant_text = " ".join(
+            block.get("text", "").strip()
+            for block in assistant_text
+            if isinstance(block, dict) and isinstance(block.get("text"), str)
+        ).strip()
+
+    return InpaintResult(
+        raw_generated=raw,
+        composited=composited,
+        mask_used=mask,
+        backend="openrouter_image",
+        resized_for_model=resized_for_model,
+        metadata={
+            "model_id": model_id,
+            "reference_count": len(refs),
+            "response_id": result.get("id"),
+            "usage": result.get("usage"),
+            "assistant_text": assistant_text if isinstance(assistant_text, str) and assistant_text else None,
+            "image_size": openrouter_image_size,
+        },
+    )
 
 
 def load_flux2_klein_pipeline(
@@ -1484,6 +1676,11 @@ def inpaint_with_diffusion(
     bfl_timeout_seconds: int = 600,
     bfl_safety_tolerance: int = 2,
     bfl_output_format: str = "png",
+    openrouter_api_key: str | None = None,
+    openrouter_api_key_env: str = "OPENROUTER_API_KEY",
+    openrouter_api_base_url: str = "https://openrouter.ai/api/v1",
+    openrouter_timeout_seconds: int = 300,
+    openrouter_image_size: str = "1K",
 ) -> InpaintResult:
     device = device or get_device()
     if backend == "auto":
@@ -1492,6 +1689,8 @@ def inpaint_with_diffusion(
                 backend = "flux2_klein_bfl"
             else:
                 backend = "flux2_klein_local"
+        elif _looks_like_openrouter_image_model(model_id):
+            backend = "openrouter_image"
         else:
             backend = "diffusers"
 
@@ -1541,6 +1740,23 @@ def inpaint_with_diffusion(
             raw = opencv_inpaint_fallback(image, mask)
             composited = _composite_preserve_unmasked(image, raw, mask)
             return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="opencv_telea_fallback", resized_for_model=False, metadata={"flux2_error": str(exc)})
+
+    if backend == "openrouter_image":
+        return inpaint_with_openrouter_image(
+            image=image,
+            mask=mask,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            model_id=model_id,
+            reference_images=reference_images,
+            seed=seed,
+            guidance_scale=guidance_scale,
+            openrouter_api_key=openrouter_api_key,
+            openrouter_api_key_env=openrouter_api_key_env,
+            openrouter_api_base_url=openrouter_api_base_url,
+            openrouter_timeout_seconds=openrouter_timeout_seconds,
+            openrouter_image_size=openrouter_image_size,
+        )
 
     image = image.convert("RGB")
     mask = mask.convert("L")

@@ -1,0 +1,31 @@
+\begin{thebibliography}{3}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[{Black Forest Labs}(2025)]{blackforest2025flux2klein}
+{Black Forest Labs}.
+\newblock Flux.2-klein-4b.
+\newblock Hugging Face model card, 2025.
+\newblock URL \url{https://huggingface.co/black-forest-labs/FLUX.2-klein-4B}.
+\newblock Accessed 2026-03-15.
+
+\bibitem[{OpenRouter}(2026)]{openrouter2026geminiimagepreview}
+{OpenRouter}.
+\newblock google/gemini-3.1-flash-image-preview.
+\newblock OpenRouter model page, 2026.
+\newblock URL
+  \url{https://openrouter.ai/google/gemini-3.1-flash-image-preview}.
+\newblock Accessed 2026-03-17.
+
+\bibitem[Wang et~al.(2025)Wang, Chen, Karaev, Vedaldi, Rupprecht, and
+  Novotny]{wang2025vggt}
+Jianyuan Wang, Minghao Chen, Nikita Karaev, Andrea Vedaldi, Christian
+  Rupprecht, and David Novotny.
+\newblock Vggt: Visual geometry grounded transformer.
+\newblock \emph{arXiv preprint arXiv:2503.11651}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2503.11651}.
+
+\end{thebibliography}

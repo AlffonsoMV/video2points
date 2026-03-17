@@ -1,0 +1,58 @@
+{
+  "device": "mps",
+  "image_paths": [
+    "outputs/tests/iterative_loop_pyramid_nanobanana/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_nanobanana/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_nanobanana/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_nanobanana/00_seed_frames/Pyramid_frame_003.png",
+    "outputs/tests/iterative_loop_pyramid_nanobanana/iter_01/03_flux/generated_raw.png"
+  ],
+  "image_hw": [
+    518,
+    518
+  ],
+  "preprocessed_shape": [
+    5,
+    3,
+    518,
+    518
+  ],
+  "depth_shape": [
+    5,
+    518,
+    518,
+    1
+  ],
+  "depth_conf_shape": [
+    5,
+    518,
+    518
+  ],
+  "world_points_shape": [
+    5,
+    518,
+    518,
+    3
+  ],
+  "world_points_conf_shape": [
+    5,
+    518,
+    518
+  ],
+  "world_points_from_depth_shape": [
+    5,
+    518,
+    518,
+    3
+  ],
+  "extrinsic_shape": [
+    5,
+    3,
+    4
+  ],
+  "intrinsic_shape": [
+    5,
+    3,
+    3
+  ]
+}

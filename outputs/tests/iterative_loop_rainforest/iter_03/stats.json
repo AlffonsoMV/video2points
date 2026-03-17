@@ -1,0 +1,90 @@
+{
+  "iteration_index": 3,
+  "seed": 4,
+  "device": "mps",
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "input_count_before_generation": 6,
+  "input_count_after_generation": 7,
+  "source_view": {
+    "index": 5,
+    "path": "outputs/tests/iterative_loop_rainforest/iter_02/03_flux/generated_raw.png",
+    "saved_input_path": "outputs/tests/iterative_loop_rainforest/iter_03/01_before/source_view_input.png",
+    "saved_render_path": "outputs/tests/iterative_loop_rainforest/iter_03/01_before/source_view_render.png"
+  },
+  "coverage_before_generation": {
+    "largest_gap_deg": 162.48864671393827,
+    "observed_coverage_deg": 197.51135328606173,
+    "observed_spacing_deg": 0.8032861351966858,
+    "max_safe_step_deg": 245.6146240234375,
+    "target_gap_deg": 30.0,
+    "step_from_boundary_deg": 30.0,
+    "boundary_side": "gap_start",
+    "target_angle_deg": 102.73611881119147,
+    "camera_angles_deg": [
+      -124.77523040771484,
+      -1.967907428741455,
+      -1.257418155670166,
+      -0.45413199067115784,
+      -1.1706971392300147e-08,
+      72.73611450195312
+    ],
+    "orbit_radius": 0.42151808738708496
+  },
+  "projection_stats_before": {
+    "projected_count": 43559,
+    "valid_ratio": 0.28602290336984215,
+    "hole_ratio": 0.8235691960181756,
+    "sparse_render_used_as_reference": true,
+    "fallback_base_image": "novel_sparse_render"
+  },
+  "flux_inputs": [
+    "outputs/tests/iterative_loop_rainforest/iter_03/00_inputs/00_pos2_flux_base.png",
+    "outputs/tests/iterative_loop_rainforest/iter_03/00_inputs/01_reference_generated_context.png",
+    "outputs/tests/iterative_loop_rainforest/iter_03/00_inputs/02_reference_generated_context.png"
+  ],
+  "environment_anchor_paths": [
+    "data/rainforest_02_05/image_02.png",
+    "data/rainforest_02_05/image_03.png",
+    "data/rainforest_02_05/image_04.png",
+    "data/rainforest_02_05/image_05.png"
+  ],
+  "environment_anchor_sheet_path": "outputs/tests/iterative_loop_rainforest/iter_03/00_inputs/01_environment_anchor_sheet.png",
+  "flux_output": {
+    "raw_path": "outputs/tests/iterative_loop_rainforest/iter_03/03_flux/generated_raw.png",
+    "composited_path": "outputs/tests/iterative_loop_rainforest/iter_03/03_flux/generated_composited.png",
+    "vggt_input_path": "outputs/tests/iterative_loop_rainforest/iter_03/03_flux/generated_raw.png",
+    "vggt_input_mask_path": null,
+    "metadata": {
+      "reference_count": 2,
+      "model_id": "black-forest-labs/FLUX.2-klein-4B"
+    }
+  },
+  "pose_and_coverage_after": {
+    "largest_gap_after_deg": 170.55952608630548,
+    "gap_improvement_deg": -8.070879372367216,
+    "predicted_angle_deg": -123.44681732281613,
+    "min_angle_to_existing_deg": 3.305210501639211,
+    "target_pose_error": {
+      "rotation_error_deg": 33.27744454897327,
+      "translation_l2_normalized": 19.232309341430664,
+      "translation_direction_error_deg": 59.43254293177799,
+      "target_translation_norm": 16.326242446899414,
+      "predicted_translation_norm": 21.427961349487305,
+      "translation_norm_ratio_pred_over_target": 1.3124857981976605
+    }
+  },
+  "paths": {
+    "before_point_cloud_ply": "outputs/tests/iterative_loop_rainforest/iter_03/01_before/point_cloud.ply",
+    "before_point_cloud_png": "outputs/tests/iterative_loop_rainforest/iter_03/01_before/point_cloud.png",
+    "pos2_render_before": "outputs/tests/iterative_loop_rainforest/iter_03/02_target_pos2/pos2_render_before.png",
+    "pos2_flux_base": "outputs/tests/iterative_loop_rainforest/iter_03/02_target_pos2/pos2_flux_base.png",
+    "hole_mask": "outputs/tests/iterative_loop_rainforest/iter_03/02_target_pos2/hole_mask.png",
+    "hole_mask_overlay": "outputs/tests/iterative_loop_rainforest/iter_03/02_target_pos2/hole_mask_overlay.png",
+    "generated_raw": "outputs/tests/iterative_loop_rainforest/iter_03/03_flux/generated_raw.png",
+    "generated_composited": "outputs/tests/iterative_loop_rainforest/iter_03/03_flux/generated_composited.png",
+    "after_point_cloud_ply": "outputs/tests/iterative_loop_rainforest/iter_03/04_after/point_cloud.ply",
+    "after_point_cloud_png": "outputs/tests/iterative_loop_rainforest/iter_03/04_after/point_cloud.png",
+    "pos2_render_after": "outputs/tests/iterative_loop_rainforest/iter_03/04_after/pos2_render_after.png"
+  }
+}

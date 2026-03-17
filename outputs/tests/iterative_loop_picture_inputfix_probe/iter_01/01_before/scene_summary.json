@@ -1,0 +1,54 @@
+{
+  "device": "mps",
+  "image_paths": [
+    "data/picture_single/image_picture.png"
+  ],
+  "image_hw": [
+    308,
+    518
+  ],
+  "preprocessed_shape": [
+    1,
+    3,
+    308,
+    518
+  ],
+  "depth_shape": [
+    1,
+    308,
+    518,
+    1
+  ],
+  "depth_conf_shape": [
+    1,
+    308,
+    518
+  ],
+  "world_points_shape": [
+    1,
+    308,
+    518,
+    3
+  ],
+  "world_points_conf_shape": [
+    1,
+    308,
+    518
+  ],
+  "world_points_from_depth_shape": [
+    1,
+    308,
+    518,
+    3
+  ],
+  "extrinsic_shape": [
+    1,
+    3,
+    4
+  ],
+  "intrinsic_shape": [
+    1,
+    3,
+    3
+  ]
+}

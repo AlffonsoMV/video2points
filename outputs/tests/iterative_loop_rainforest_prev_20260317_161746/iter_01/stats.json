@@ -1,0 +1,88 @@
+{
+  "iteration_index": 1,
+  "seed": 2,
+  "device": "mps",
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "input_count_before_generation": 5,
+  "input_count_after_generation": 6,
+  "source_view": {
+    "index": 4,
+    "path": "data/rainforest/image_05.png",
+    "saved_input_path": "outputs/tests/iterative_loop_rainforest/iter_01/01_before/source_view_input.png",
+    "saved_render_path": "outputs/tests/iterative_loop_rainforest/iter_01/01_before/source_view_render.png"
+  },
+  "coverage_before_generation": {
+    "largest_gap_deg": 209.7740053568015,
+    "observed_coverage_deg": 150.2259946431985,
+    "observed_spacing_deg": 10.749433517456055,
+    "max_safe_step_deg": 255.57383728027344,
+    "target_gap_deg": 30.0,
+    "step_from_boundary_deg": 30.0,
+    "boundary_side": "gap_start",
+    "target_angle_deg": 30.94020648854693,
+    "camera_angles_deg": [
+      -149.28578186035156,
+      -145.0079345703125,
+      -127.78691864013672,
+      -9.128461186946879e-08,
+      0.9402064085006714
+    ],
+    "orbit_radius": 0.12545214593410492
+  },
+  "projection_stats_before": {
+    "projected_count": 0,
+    "valid_ratio": 0.0,
+    "hole_ratio": 1.0,
+    "sparse_render_used_as_reference": false,
+    "fallback_base_image": "source_view_input"
+  },
+  "flux_inputs": [
+    "outputs/tests/iterative_loop_rainforest/iter_01/00_inputs/00_pos2_flux_base.png",
+    "outputs/tests/iterative_loop_rainforest/iter_01/00_inputs/01_reference_generated_context.png"
+  ],
+  "environment_anchor_paths": [
+    "data/rainforest/image_01.png",
+    "data/rainforest/image_02.png",
+    "data/rainforest/image_03.png",
+    "data/rainforest/image_04.png"
+  ],
+  "environment_anchor_sheet_path": "outputs/tests/iterative_loop_rainforest/iter_01/00_inputs/01_environment_anchor_sheet.png",
+  "flux_output": {
+    "raw_path": "outputs/tests/iterative_loop_rainforest/iter_01/03_flux/generated_raw.png",
+    "composited_path": "outputs/tests/iterative_loop_rainforest/iter_01/03_flux/generated_composited.png",
+    "vggt_input_path": "outputs/tests/iterative_loop_rainforest/iter_01/03_flux/generated_raw.png",
+    "vggt_input_mask_path": null,
+    "metadata": {
+      "reference_count": 1,
+      "model_id": "black-forest-labs/FLUX.2-klein-4B"
+    }
+  },
+  "pose_and_coverage_after": {
+    "largest_gap_after_deg": 242.30394241114612,
+    "gap_improvement_deg": -32.52993705434463,
+    "predicted_angle_deg": 2.079156114015602,
+    "min_angle_to_existing_deg": 2.0791559691195687,
+    "target_pose_error": {
+      "rotation_error_deg": 145.831272041535,
+      "translation_l2_normalized": 0.1842399388551712,
+      "translation_direction_error_deg": 63.10691148602731,
+      "target_translation_norm": 0.19255134463310242,
+      "predicted_translation_norm": 0.020357349887490273,
+      "translation_norm_ratio_pred_over_target": 0.10572426760394871
+    }
+  },
+  "paths": {
+    "before_point_cloud_ply": "outputs/tests/iterative_loop_rainforest/iter_01/01_before/point_cloud.ply",
+    "before_point_cloud_png": "outputs/tests/iterative_loop_rainforest/iter_01/01_before/point_cloud.png",
+    "pos2_render_before": "outputs/tests/iterative_loop_rainforest/iter_01/02_target_pos2/pos2_render_before.png",
+    "pos2_flux_base": "outputs/tests/iterative_loop_rainforest/iter_01/02_target_pos2/pos2_flux_base.png",
+    "hole_mask": "outputs/tests/iterative_loop_rainforest/iter_01/02_target_pos2/hole_mask.png",
+    "hole_mask_overlay": "outputs/tests/iterative_loop_rainforest/iter_01/02_target_pos2/hole_mask_overlay.png",
+    "generated_raw": "outputs/tests/iterative_loop_rainforest/iter_01/03_flux/generated_raw.png",
+    "generated_composited": "outputs/tests/iterative_loop_rainforest/iter_01/03_flux/generated_composited.png",
+    "after_point_cloud_ply": "outputs/tests/iterative_loop_rainforest/iter_01/04_after/point_cloud.ply",
+    "after_point_cloud_png": "outputs/tests/iterative_loop_rainforest/iter_01/04_after/point_cloud.png",
+    "pos2_render_after": "outputs/tests/iterative_loop_rainforest/iter_01/04_after/pos2_render_after.png"
+  }
+}

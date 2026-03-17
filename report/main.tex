@@ -1,207 +1,184 @@
 \documentclass[11pt]{article}
 
-\usepackage[margin=1in]{geometry}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
 \usepackage{graphicx}
-\usepackage{subcaption}
 \usepackage{booktabs}
 \usepackage{amsmath}
-\usepackage{siunitx}
-\usepackage{tikz}
-\usepackage{hyperref}
-\usepackage[numbers]{natbib}
+\usepackage{caption}
+\usepackage{subcaption}
 \usepackage{float}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
 
-\usetikzlibrary{arrows.meta, positioning, shapes.geometric}
-\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
-\setlength{\parskip}{0.35em}
+\graphicspath{{figures/}}
+\setlength{\parskip}{0.45em}
 \setlength{\parindent}{0pt}
+\captionsetup{font=small}
 
-\title{Closed-Loop Novel-View Generation for Sparse 3D Reconstruction}
-\author{Author Name Placeholder \\ Institution Placeholder \\ Course: 3D Computer Vision}
-\date{Date Placeholder}
+\title{Iterative Novel View Completion with VGGT:\\Generator Comparison, Failure Modes, and Practical Tweaks}
+\author{3D Computer Vision Project Report}
+\date{March 2026}
 
 \begin{document}
-
 \maketitle
 
 \begin{abstract}
-This report studies a sparse-view reconstruction pipeline that combines a geometry model, a novel-view completion model, and an iterative update loop. Starting from four real images of an indoor palm-tree scene, the pipeline reconstructs a 3D point cloud with VGGT, renders a new sparse view, fills missing regions with FLUX.2-klein, and reruns reconstruction with the generated image. The main objective is not only to create additional views, but to add views that improve camera coverage while preserving scene consistency. In the final experiment, the largest uncovered angular gap drops from \SI{353.7}{deg} to \SI{248.3}{deg} over four synthetic iterations. However, the resulting point-cloud renders remain sparse and partly flattened, and fixed-camera image metrics show that improved coverage does not translate into improved structural fidelity. The report therefore frames the method as a proof of concept for closed-loop expansion rather than a strong reconstruction system.
+We study an iterative view expansion pipeline built around VGGT: starting from a few input images, we reconstruct a sparse scene, render a nearby unseen view, complete that view with an image generator, and rerun reconstruction with the newly synthesized image. The key comparison in this report is the generator itself, so we evaluate it primarily by \emph{faithfulness to the sparse target render}: on pixels already supported by geometry, does the generated image preserve the requested scene content or drift away from it? We compare a local FLUX model against Nano Banana 2 (\texttt{google/gemini-3.1-flash-image-preview}) on three scene-level examples (plant, Colosseum, Pyramid of Giza) and one object-only failure case (chair). On all three working scenes, Nano Banana shows substantially lower supported-pixel MAE than FLUX, which matches the qualitative impression that its generations are more faithful to the requested novel view. Loop-level exploration metrics such as orbit coverage can still favor FLUX, but those metrics conflate generation quality with planning aggressiveness and reconstruction stability. The core bottleneck remains the image generator: when the target sparse render is too incomplete, the generator drifts away from the scene even if the prompt is strong. We also document two practical findings that consistently helped: packaging reference views as a collage, and separating those views with white gutters so the model reads them as references rather than as a single composite scene.
 \end{abstract}
 
-\section{Introduction}
-Sparse-view 3D reconstruction is attractive because it reduces acquisition effort, but it also leaves large portions of a scene unseen. In practice, this leads to incomplete geometry, sparse projections, and poor coverage of occluded or disoccluded regions. The goal of this project is to reduce that limitation by turning novel-view generation into a closed-loop process: reconstruct the scene, generate a new view that targets an unseen region, add it back to the input set, and repeat.
+\section{Method}
+The pipeline starts from a small set of real views of the same scene. VGGT reconstructs a sparse point cloud and estimates cameras from those inputs \citep{wang2025vggt}. We then plan a new camera pose along the horizontal orbit that targets the largest currently unseen angular gap. From the sparse point cloud we render:
+\begin{enumerate}
+  \item a \emph{target sparse render} at the desired novel pose, which is the direct geometric cue given to the image generator, and
+  \item a \emph{source view render} at the nearest known pose, used as a fallback when the novel sparse projection is too empty to be informative.
+\end{enumerate}
 
-The motivation is straightforward. If the generated view is both visually plausible and geometrically informative, the reconstruction can progressively cover more of the scene than the original images alone. This project studies that idea on a compact indoor scene centered on a palm tree. The implementation is intentionally practical: geometry comes from VGGT \citep{wang2025vggt}, and novel-view completion comes from the lightweight FLUX.2-klein model \citep{blackforest2025flux2klein}, chosen because local compute constraints rule out larger diffusion systems. The intended contribution is therefore methodological: to test whether a lightweight geometry-render-generate-reconstruct loop can improve sparse-view coverage under strong compute limits.
+The generator receives the target sparse render (or the fallback source render when necessary) together with a single reference collage assembled from the available real images. We found this collage strategy more stable than passing many independent images through the generation interface. Adding explicit white gutters between the collage tiles reduced a recurring failure mode on landmarks, where the generator interpreted the reference sheet as a real panorama and duplicated the structure in the output.
 
-The central question is whether the generated views add useful geometric information while staying consistent with the original environment. This report therefore evaluates the method from two angles: camera-pose fidelity of the generated views, and preservation of the original scene when the reconstruction is rendered back from an original camera.
+The generated image is then appended to the image set and VGGT is rerun from images, not from accumulated point clouds. This distinction matters: each iteration rebuilds a fresh reconstruction from the current image set. We therefore report two different kinds of metrics:
+\begin{itemize}
+  \item \textbf{generator fidelity metric}: supported-pixel MAE between two images, computed only on pixels where the target render already has non-white geometric support,
+  \item \textbf{loop diagnostics}: largest unseen gap and rotation error, which remain useful for understanding orbit growth and pose recovery but are not reliable standalone measures of generator quality.
+\end{itemize}
 
-\section{Methodology}
-\subsection{Geometric Backbone: VGGT}
-The pipeline uses VGGT as the geometry backbone \citep{wang2025vggt}. Given a small set of input images, VGGT predicts camera parameters, depth, and world-space point maps. These outputs are merged into a colored point cloud that can be rendered from arbitrary viewpoints. In this project, that point cloud is the geometric state of the pipeline: every synthetic iteration starts from the current reconstruction and ends by updating it.
+The report intentionally focuses on 2D projections rather than 3D point-cloud screenshots. The actual decision loop uses renders and rerenders, and these views make the success or failure of each iteration much clearer than the raw point clouds, which were often visually noisy and misleading.
 
-VGGT is a good fit for this use case because it exposes both geometry and camera estimates in a single model. That makes it possible to render a sparse novel view, infer a target camera pose, and then evaluate whether the generated image is recovered at the intended position after reconstruction.
+\section{Experimental Setup}
+We run four-step iterative loops when possible. The main comparison uses three scene-level examples:
+\begin{itemize}
+  \item \textbf{Plant}: small natural scene with foliage and moderate parallax,
+  \item \textbf{Colosseum}: landmark scene with strong structure and wide-scale context,
+  \item \textbf{Pyramid of Giza}: highly symmetric landmark, difficult because missing geometry can look like damage or internal voids.
+\end{itemize}
 
-\subsection{Novel-View Completion with FLUX}
-Novel-view completion is handled by FLUX.2-klein-4B \citep{blackforest2025flux2klein}. In the current implementation, FLUX is not used as a strict pose-conditioned inpainting model. Instead, it receives a masked sparse render of the target view together with original-scene references. The model behaves as reference-guided masked image editing: it tends to preserve scene appearance reasonably well, but it is not strongly constrained to recover the exact intended camera pose.
+We compare a local FLUX backbone \citep{blackforest2025flux2klein} against Nano Banana 2 served through OpenRouter \citep{openrouter2026geminiimagepreview}. The chair sequence is used separately as a limitation case rather than as a successful reconstruction benchmark because it lacks enough environmental context.
 
-This distinction is important. It explains why some iterations add meaningful new coverage, while others collapse toward already observed viewpoints. The project therefore treats FLUX as a practical completion module, but not as a fully geometry-aware generator.
+\section{Generator Comparison}
 
-\subsection{Relation to Prior Work}
-The project is closest to geometry-based novel-view completion methods that reconstruct visible structure, render a new view, and fill disoccluded regions. Earlier work such as 3D Photography \citep{shih2020photography} and SLIDE \citep{jampani2021slide} established this render-and-complete pattern. Later methods such as CompNVS \citep{li2022compnvs}, GenWarp \citep{seo2024genwarp}, and LucidDreamer \citep{chung2023luciddreamer} pushed further toward explicit scene completion or generative novel-view synthesis.
+\subsection{Plant}
+Figure~\ref{fig:plant-grid} shows the clearest qualitative improvement from changing the generator. Nano Banana produces more coherent plant structure, better color continuity, and fewer obviously broken leaves or pot fragments. In contrast, FLUX often keeps the scene roughly plausible but introduces more texture drift and structural wobble.
 
-This project follows the same general direction, but with a narrower focus: can a simple loop built from an off-the-shelf geometry model and a lightweight image generator improve scene coverage under limited hardware? The answer is partially yes, but the results also show where a small generator becomes the limiting factor.
-
-\section{Pipeline}
-Figure~\ref{fig:pipeline_overview} summarizes the full system. The core loop is: reconstruct, render, mask, generate, reconstruct again.
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-    node distance=1.0cm and 0.8cm,
-    box/.style={draw, rounded corners, align=center, minimum width=2.6cm, minimum height=1.1cm},
-    arrow/.style={-Latex, thick}
-]
-\node[box] (input) {Original\\images};
-\node[box, right=of input] (vggt1) {VGGT\\reconstruction};
-\node[box, right=of vggt1] (render) {Horizontal orbit\\camera + render};
-\node[box, right=of render] (mask) {Hole mask\\construction};
-\node[box, right=of mask] (flux) {FLUX completion\\with anchors};
-\node[box, below=of vggt1, xshift=3.4cm] (vggt2) {Updated VGGT\\reconstruction};
-\draw[arrow] (input) -- (vggt1);
-\draw[arrow] (vggt1) -- (render);
-\draw[arrow] (render) -- (mask);
-\draw[arrow] (mask) -- (flux);
-\draw[arrow] (flux) |- (vggt2);
-\draw[arrow] (vggt2) -| (render);
-\end{tikzpicture}
-\caption{Overview of the closed-loop pipeline. The iterative version repeats the rendering and completion steps while updating the reconstruction after each accepted generated view.}
-\label{fig:pipeline_overview}
-\end{figure}
-
-\subsection{Initial Reconstruction}
-The process starts from four real images of the same scene. VGGT reconstructs a point cloud from these inputs and reprojects the result from one of the recovered cameras. This first comparison is important because it checks whether the geometry model already captures the dominant scene structure before any generation is introduced.
+The fidelity metric supports that visual impression directly. On Plant, Nano Banana lowers supported-pixel MAE from 31.8 to 24.6. This means it preserves the pixels already specified by the sparse target render substantially better than FLUX. Plant is also the one scene where this generator improvement slightly helps the loop diagnostics as well.
 
 \begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/pipeline_inputs_and_reprojection.png}
-\caption{Four original input images and a render of the initial VGGT reconstruction from one recovered camera. The rerender captures coarse scene layout, but it is already sparse and visually close to a flattened point-splat representation rather than a strong 3D reconstruction.}
-\label{fig:pipeline_inputs}
+  \centering
+  \includegraphics[width=\linewidth]{comparison_plant_target_rerender_grid.png}
+  \caption{Plant comparison over four iterations. Each row corresponds to one iteration. For each generator we show the target sparse render requested by the planner, the generated image, and the rerender obtained after reconstruction with the new image. Nano Banana is visually cleaner, but the rerender still reveals that geometric improvement remains limited.}
+  \label{fig:plant-grid}
 \end{figure}
 
-\subsection{Target Camera and Sparse Novel Render}
-The iterative version does not move the camera arbitrarily in 3D. It estimates a horizontal orbit around the reconstructed scene, keeps camera height approximately fixed, and selects a target angle inside the largest uncovered angular gap. This produces a sparse target render that points toward unseen regions.
+\subsection{Colosseum}
+Colosseum highlights a different trade-off. Earlier FLUX runs sometimes hallucinated multiple Colosseums when the reference collage was too tightly packed. The white-gutter collage improved this substantially, but FLUX still shows more leakage from the anchor sheet and more unstable large-scale geometry than Nano Banana. Nano Banana is better at preserving the idea of a single coherent landmark instead of inventing duplicated arena-scale structures.
+
+The fidelity metric makes the generator advantage explicit even though coverage does not. Nano Banana lowers supported-pixel MAE from 30.1 to 19.4. So the model is much better at obeying the requested sparse view, even if the subsequent reconstruction still struggles to translate that into larger orbit expansion.
 
 \begin{figure}[H]
-\centering
-\includegraphics[width=0.82\textwidth]{figures/pipeline_camera_move.png}
-\caption{From a render at an existing camera to the target sparse novel render. The horizontal orbit planner improved viewpoint spread compared with the earlier free-plane orbit heuristic.}
-\label{fig:pipeline_camera_move}
+  \centering
+  \includegraphics[width=\linewidth]{comparison_colosseum_flux_vs_nanobanana.png}
+  \caption{Colosseum comparison over four iterations. FLUX expands the viewing arc more aggressively, but Nano Banana avoids the most obvious semantic failure mode: generating duplicated landmarks. The rerenders show that neither model is fully reliable once the sparse conditioning becomes weak.}
+  \label{fig:colosseum-grid}
 \end{figure}
 
-\subsection{Hole Detection}
-Because the point cloud is incomplete, the target render contains many empty pixels. These holes are identified with a binary mask derived from the render-validity map. The mask is then lightly regularized so that the generator sees coherent missing regions rather than isolated pixels.
+\subsection{Pyramid of Giza}
+Pyramid is the hardest structured scene. The target sparse render frequently suggests a broken or hollow structure because the sparse points only cover part of the pyramid shell. We explicitly changed the prompt to name the \emph{Great Pyramid of Giza} and state that the visible gaps are due to missing points rather than a damaged monument. This improves the semantics of the generated image, especially for Nano Banana, which is less likely to produce a visibly collapsed pyramid.
+
+Even with those prompt fixes and white-filled masking of unsupported areas, reconstruction remains poor. But again the generator fidelity metric favors Nano Banana clearly: supported-pixel MAE falls from 62.1 to 45.3. In other words, Nano Banana produces a more faithful pyramid image, yet that improvement is still not enough to overcome the underlying geometric ambiguity.
 
 \begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/pipeline_masking.png}
-\caption{Sparse novel render, binary hole mask, and mask overlay. The mask marks regions that are not explained by projected geometry and therefore need image completion.}
-\label{fig:pipeline_masking}
+  \centering
+  \includegraphics[width=\linewidth]{comparison_pyramid_flux_vs_nanobanana.png}
+  \caption{Pyramid comparison. The prompts explicitly describe the structure as the intact Great Pyramid of Giza rather than a broken ruin. This improves the generated imagery, but the rerenders remain weak, indicating that the geometry is still not being recovered reliably. Nano Banana completed three iterations in this run.}
+  \label{fig:pyramid-grid}
 \end{figure}
 
-\subsection{Novel-View Completion}
-The masked target view is passed to FLUX.2-klein together with an anchor sheet built from the original scene images. In this setup, FLUX acts as a reference-guided completion model. Its role is to propose a visually plausible continuation of the sparse target render while staying close to the observed environment.
+\subsection{Generator Fidelity Across Working Scenes}
+Figure~\ref{fig:avg-metrics} now reports two related comparisons. The top row measures \emph{target to generated} fidelity: how much the generated image changes the pixels already specified by the sparse target render. The bottom row measures \emph{target to rerender} fidelity: after adding the generated image back into VGGT and rerendering the same pose, how much of that supported structure survives.
+
+On the generator metric itself (top row), Nano Banana is better on every scene. The improvements are consistent rather than marginal:
+\begin{itemize}
+  \item \textbf{Plant}: MAE drops from 31.8 to 24.6,
+  \item \textbf{Colosseum}: MAE drops from 30.1 to 19.4,
+  \item \textbf{Pyramid}: MAE drops from 62.1 to 45.3.
+\end{itemize}
+
+On average, Nano Banana reduces the target-to-generated supported-pixel error by about 28\%. This is the most defensible statement about generator quality in our setting, because it measures obedience to the geometric conditioning that the model was explicitly asked to preserve.
+
+The rerender metric (bottom row) tells a slightly different but still favorable story for Nano Banana. After reconstruction, Nano Banana remains better on average, with MAE decreasing from 43.17 to 32.19. Plant is the only exception, where FLUX keeps a slightly better target-to-rerender match, but Nano Banana is clearly better on Colosseum and Pyramid.
+
+By contrast, loop-level coverage metrics can still reward FLUX in some scenes because they are affected by step size, symmetry, and whether VGGT successfully localizes the new image afterward. Those diagnostics remain useful, but they should not be interpreted as proof that FLUX is the better image model.
 
 \begin{figure}[H]
-\centering
-\includegraphics[width=0.82\textwidth]{figures/pipeline_flux_completion.png}
-\caption{Masked target image passed to FLUX and the resulting completed view. The generated image is used as the new synthetic observation in the next reconstruction step.}
-\label{fig:pipeline_flux}
+  \centering
+  \includegraphics[width=\linewidth]{comparison_plant_metrics.png}
+  \caption{Fidelity on pixels already supported by the sparse target render, measured only with MAE. Left: target sparse render versus generated image, which directly evaluates the generator. Right: target sparse render versus rerender after reconstruction, which evaluates how much of that structure survives VGGT. Lower is better. Nano Banana dominates the generator metric on all scenes and also wins on average in the rerender metric, despite Plant being a small exception.}
+  \label{fig:avg-metrics}
 \end{figure}
 
-\subsection{Reconstruction Update and Validation}
-The generated image is appended to the input set and VGGT is run again. The updated point cloud is then compared with the original reconstruction, and the scene is rerendered from the same target pose used for generation. This closes the loop between geometry and image synthesis.
+\begin{table}[H]
+  \centering
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{lrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Target $\rightarrow$ Generated MAE $\downarrow$} & \multicolumn{2}{c}{Target $\rightarrow$ Rerender MAE $\downarrow$} \\
+    \cmidrule(lr){2-3}\cmidrule(lr){4-5}
+    Scene & {FLUX} & {Nano Banana} & {FLUX} & {Nano Banana} \\
+    \midrule
+    Plant     & 31.79 & 24.60 & 32.92 & 35.73 \\
+    Colosseum & 30.11 & 19.42 & 46.17 & 32.35 \\
+    Pyramid   & 62.15 & 45.32 & 50.42 & 28.49 \\
+    \midrule
+    Average   & 41.35 & 29.78 & 43.17 & 32.19 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Per-scene MAE summary. The first pair of columns evaluates the generator directly. The second pair evaluates the full loop after reconstruction. Nano Banana wins on every scene for target-to-generated fidelity and on average for target-to-rerender fidelity.}
+  \label{tab:scene-summary}
+\end{table}
+
+\section{Limitations and Practical Findings}
+
+\subsection{Object-Only Scenes Without Background}
+The clearest limitation is the chair sequence in Figure~\ref{fig:chair-limit}. Both generators can synthesize plausible chair images from sparse conditioning, but the rerender after reconstruction remains poor. This is not mainly an image-generation problem. VGGT is designed for scenes, and the chair setup removes most of the surrounding background cues that stabilize camera estimation. Once that environmental support disappears, reconstruction collapses into white or unstable sparse points even when the generated chair itself looks reasonable.
+
+This limitation is important for the report because it separates two notions of success:
+\begin{itemize}
+  \item \textbf{generator success}: the synthesized image looks like a chair,
+  \item \textbf{reconstruction success}: that image helps VGGT recover consistent geometry and camera pose.
+\end{itemize}
+For the chair, the first can hold while the second fails.
 
 \begin{figure}[H]
-\centering
-\includegraphics[width=0.82\textwidth]{figures/pipeline_reconstruction_comparison.png}
-\caption{Initial reconstruction versus reconstruction after adding the generated novel view. The additional image can improve camera coverage, but the reconstructed geometry remains noisy and only weakly volumetric.}
-\label{fig:pipeline_reconstruction}
+  \centering
+  \includegraphics[width=0.9\linewidth]{limitations_chair_generator_vs_reconstruction.png}
+  \caption{Chair limitation case. For both generators, the target sparse render and final rerender remain poor even when the generated image itself is plausible. This supports the conclusion that background-poor single-object inputs are a poor match for a scene-centric reconstructor such as VGGT.}
+  \label{fig:chair-limit}
 \end{figure}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/pipeline_same_pose_rerender.png}
-\caption{Baseline sparse render, generated target image, and rerender from the updated reconstruction at the same target pose. This is the single-step bridge between the one-shot experiment and the iterative closed loop.}
-\label{fig:pipeline_same_pose}
-\end{figure}
+\subsection{Generator Is the Bottleneck}
+Across all experiments, the dominant failure mode is not camera planning but weak generator anchoring. When the target sparse render contains enough structure, both generators can produce useful images. When it is too empty or too ambiguous, the generator invents content that is semantically plausible but geometrically unhelpful. This explains why the report emphasizes 2D target/generation/rerender triplets: they make it obvious when the generated image no longer matches the sparse geometry that asked for it.
 
-\section{Results}
-\subsection{Single-Step Bridge}
-Before evaluating the closed loop, it is useful to look at the first augmentation step in isolation. Relative to the generated target image, the rerender after reconstruction improves slightly over the sparse baseline in PSNR (\num{7.98} to \num{8.26}) and SSIM (\num{0.224} to \num{0.231}), but becomes slightly worse in LPIPS (\num{0.694} to \num{0.707}). This is not a clearly positive result. The numbers indicate that the rerender gets marginally closer in average pixel intensity and coarse local structure, while becoming less aligned in perceptual feature space. In practice, this usually means that the reconstruction is absorbing broad color and layout cues without faithfully reproducing scene details.
+There are also two practical bottlenecks in runtime and cost. VGGT is a real performance bottleneck because it must be rerun over an expanding image set at every iteration, so each loop repeatedly pays for camera estimation and sparse reconstruction. The main bottleneck, however, is still the GenAI model, because it dominates the final image fidelity. In practice, FLUX is operationally cheap: we can run it locally on a MacBook Pro M2 Max through MPS without per-request API charges. Nano Banana 2 is much more expensive. The three main Nano Banana report runs (Plant, Colosseum, Pyramid) cost about \$0.76 in total, and the broader OpenRouter activity snapshot for our experimentation showed about \$1.45 across 21 requests and roughly 61\,k tokens.
 
-Pose analysis tells a more nuanced story. In the one-step setting, the recovered synthetic camera is close to the intended target in rotation (\num{3.20} degrees), but weak in translation magnitude, with a normalized translation error of \num{1.41}. The generated view also remains closer to one of the original views than desired, which motivates a stronger evaluation over multiple iterations.
+Three implementation tweaks were consistently useful:
+\begin{enumerate}
+  \item \textbf{reference collage instead of many separate anchors}: easier to control and often more stable,
+  \item \textbf{white gutters between collage tiles}: reduced duplicated structures by making the collage visually explicit,
+  \item \textbf{strong scene naming in the prompt}: especially important for landmarks such as the Great Pyramid of Giza.
+\end{enumerate}
 
-\subsection{Iterative Coverage and Pose Fidelity}
-The main experiment starts from four real images and adds four generated views, for a total of eight images. Figure~\ref{fig:results_gap} shows the largest unseen angular gap over the loop. Coverage improves from approximately \SI{353.7}{deg} at the start to \SI{248.3}{deg} after four synthetic iterations. This should be interpreted carefully: the metric measures how the recovered cameras spread around the scene, not how accurate or complete the underlying 3D geometry becomes.
+These tweaks improve semantics, but they do not remove the core dependency on having a sufficiently informative sparse target render.
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.75\textwidth]{figures/results_largest_gap_curve.png}
-\caption{Largest unseen angular gap over the iterative loop. Lower is better. The horizontal orbit planner reduces unseen coverage substantially over four synthetic updates.}
-\label{fig:results_gap}
-\end{figure}
+\section{Conclusion}
+Replacing FLUX with Nano Banana makes the generator itself clearly better. Across Plant, Colosseum, and Pyramid, Nano Banana is superior on the most direct fidelity metric we kept in the report: it preserves the sparse target render more faithfully, with 28\% lower average target-to-generated MAE. Even after reconstruction, the target-to-rerender comparison still favors Nano Banana on average, with 25\% lower error. That result matches the qualitative impression throughout the report: Nano Banana drifts less, duplicates landmarks less often, and responds better to explicit scene prompts.
 
-However, the gain is not uniform across iterations. Figure~\ref{fig:results_pose} shows the recovered camera error of each generated view. Iterations 1 and 3 are the strongest: their rotation errors are \num{3.36} and \num{5.09} degrees, with normalized translation errors of \num{0.81} and \num{1.68}. By contrast, iterations 2 and 4 drift more strongly, with rotation errors near \num{39} and \num{38} degrees and much larger translation error. The figure is therefore better read as a per-iteration diagnostic than as a smooth convergence curve: two iterations are reasonably pose-consistent, and two fail clearly. This confirms that horizontal orbit planning improved the target selection stage, but generator pose fidelity still varies considerably across iterations.
+The main lesson is that the image generator, not VGGT alone, limits the pipeline. VGGT is a meaningful runtime bottleneck, but the dominant quality bottleneck is the GenAI model. Good-looking novel views are not enough; they must also remain geometrically anchored to sparse reprojection cues. The chair failure case makes the second key point explicit: without environmental context, a scene-centric reconstructor like VGGT is not a good match for isolated objects. From a practical perspective, FLUX remains attractive because it is cheap and local, whereas Nano Banana is better but materially more expensive.
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/results_pose_fidelity_curve.png}
-\caption{Recovered camera fidelity of generated views across iterations. This plot is not expected to be monotonic; it separates successful and failed synthetic steps. Iterations 1 and 3 remain relatively close to the target pose, while iterations 2 and 4 drift toward already seen viewpoints.}
-\label{fig:results_pose}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/results_generated_views_strip.png}
-\caption{Generated views produced by the four closed-loop iterations. Qualitatively, some steps extend the scene coherently, while others bias back toward existing appearance patterns.}
-\label{fig:results_generated}
-\end{figure}
-
-\subsection{Preservation of the Original Camera}
-To measure whether the loop preserves the observed scene while adding new views, the reconstruction is rerendered from the camera associated with \texttt{image\_01.png} after each iteration. The resulting image is compared with the original photograph using PSNR, SSIM, and LPIPS.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/results_fixed_camera_metrics.png}
-\caption{Fixed-camera preservation metrics over the iterative process. PSNR increases modestly, while SSIM and LPIPS degrade, indicating that coarse intensity structure is preserved better than fine perceptual detail.}
-\label{fig:results_fixed_camera_metrics}
-\end{figure}
-
-The fixed-camera experiment shows a mixed result. PSNR improves from \num{9.21} at the baseline to \num{9.93} after three synthetic iterations, then drops slightly to \num{9.71} at the fourth iteration. In contrast, SSIM declines from \num{0.310} to \num{0.203}, and LPIPS degrades from \num{0.631} to \num{0.741}. Taken together, these trends are not good overall. They indicate that the loop preserves broad brightness and color statistics a little better over time, but it loses structural correspondence and perceptual similarity to the original image.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/results_fixed_camera_rerender_strip.png}
-\caption{Rerenders from the original camera associated with \texttt{image\_01.png}. The baseline reconstruction is followed by the reconstructions obtained after one to four synthetic additions.}
-\label{fig:results_fixed_camera_strip}
-\end{figure}
-
-\subsection{Final Reconstruction}
-The final reconstruction after four synthetic updates is shown in Figure~\ref{fig:results_final_point_cloud}. The visualization should be read conservatively. The point cloud is still sparse, noisy, and concentrated in a relatively narrow depth range, so it does not yet resemble a high-quality 3D model of the palm tree. The main positive result is improved camera coverage around the object, not a strong final reconstruction. The quantitative results make the same point: visual completion and geometric faithfulness are not equivalent, and some generated views do not remain tightly aligned with the intended target pose.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.72\textwidth]{figures/results_final_point_cloud.png}
-\caption{Final point-cloud visualization after four synthetic iterations. The reconstruction spans more viewpoints than the baseline, but it remains a weak and partially flattened point cloud rather than a clean 3D model.}
-\label{fig:results_final_point_cloud}
-\end{figure}
-
-\section{Conclusion and Future Work}
-This project demonstrates that a simple closed-loop combination of geometry reconstruction and image generation can improve sparse-view camera coverage in a measurable way. Starting from four real images, the system expands the set to eight views and reduces the largest unseen angular gap from \SI{353.7}{deg} to \SI{248.3}{deg}. The horizontal orbit planner was an important improvement over the earlier orbit heuristic, because it produced more useful target cameras for this scene.
-
-At the same time, the experiments expose the main limitation of the current system: FLUX.2-klein is lightweight and practical, but not sufficiently pose-faithful for stable iterative expansion. Some generated views match the intended orbit well, while others drift back toward already observed viewpoints. This inconsistency also appears in the fixed-camera preservation study, where SSIM and LPIPS deteriorate across iterations even when the camera-distribution metric improves. The resulting reconstructions therefore remain sparse and only weakly 3D.
-
-The hardware budget is another real constraint. A larger run with ten total views exceeded available MPS memory during reconstruction, so the final experiment was limited to eight views. This is a practical limitation rather than a conceptual one. Future work should therefore target three directions: a stronger pose-conditioned completion model, an explicit acceptance or rejection rule based on recovered camera pose, and more capable compute or paid inference access. With a larger model or a higher-quality external service such as Nano Banana, the same loop could likely produce more informative and more stable synthetic views.
+Future work should therefore target stronger conditioning rather than stronger prompting alone: denser or more reliable sparse renders, generator interfaces that accept multiple structured references without ambiguity, and reconstruction models that are explicitly robust to object-only inputs.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

@@ -1,0 +1,71 @@
+{
+  "device": "mps",
+  "pipeline_config": {
+    "data_dir": "data/picture_single",
+    "output_dir": "outputs",
+    "input_image_stem": "image_01",
+    "vggt_model_id": "facebook/VGGT-1B",
+    "inpaint_model_id": "black-forest-labs/FLUX.2-klein-4B",
+    "inpaint_backend": "auto",
+    "bfl_api_base_url": "https://api.bfl.ai",
+    "bfl_api_key_env": "BFL_API_KEY",
+    "bfl_poll_interval_seconds": 1.0,
+    "bfl_timeout_seconds": 600,
+    "bfl_safety_tolerance": 2,
+    "bfl_output_format": "png",
+    "preprocess_mode": "crop",
+    "vggt_conf_percentile": 55.0,
+    "max_points_plot": 20000,
+    "max_points_render": 120000,
+    "render_point_radius": 2,
+    "novel_shift_right": 0.12,
+    "novel_yaw_deg": -4.0,
+    "novel_pitch_deg": 0.0,
+    "novel_roll_deg": 0.0,
+    "mask_dilate_px": 4,
+    "mask_close_px": 3,
+    "mask_exterior_only": false,
+    "mask_support_close_px": 0,
+    "mask_support_dilate_px": 0,
+    "mask_fill_rgb": null,
+    "inpaint_steps": 6,
+    "inpaint_guidance_scale": 1.0,
+    "inpaint_prompt": "Painterly continuation of the same hand-painted summer countryside landscape from the target sparse render viewpoint. This is one coherent post-impressionist rural painting with golden grass, a stone wall, farmhouse, haystacks, blue gate, trees, flowers, bright sky, and a single person walking in the field. Fill only missing regions, preserve the visible rendered geometry, keep the same composition, brushwork, color palette, and painted texture, and continue the same artwork rather than creating a photorealistic scene. Do not add extra people, extra buildings, duplicated haystacks, broken walls, or new objects not implied by the original painting.",
+    "inpaint_negative_prompt": "changes to visible regions, duplicated objects, warped geometry, blurry details, oversmoothing",
+    "seed": 1,
+    "n_frames_per_video": 4,
+    "max_iterations": 1,
+    "n_orbit_fill_views": 4
+  },
+  "loop_config": {
+    "max_total_views": 12,
+    "start_view_count": 0,
+    "max_reference_images": 1,
+    "max_iterations": 4,
+    "environment_anchor_count": 0,
+    "environment_anchor_start_iteration": 1,
+    "step_scale": 1.0,
+    "min_step_deg": 20.0,
+    "output_root": "outputs/tests/iterative_loop_picture"
+  },
+  "subject": "painting",
+  "initial_video_path": null,
+  "input_background_masking": {
+    "enabled": false,
+    "distance_threshold": null,
+    "masked_seed_images": [],
+    "masked_seed_masks": []
+  },
+  "background_filter": null,
+  "resolved_start_view_count": 1,
+  "raw_initial_images": [
+    "data/picture_single/image_picture.png"
+  ],
+  "initial_images": [
+    "data/picture_single/image_picture.png"
+  ],
+  "environment_anchor_paths": [
+    "data/picture_single/image_picture.png"
+  ],
+  "iterations": []
+}

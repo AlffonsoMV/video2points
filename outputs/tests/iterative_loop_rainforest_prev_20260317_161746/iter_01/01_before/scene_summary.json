@@ -1,0 +1,58 @@
+{
+  "device": "mps",
+  "image_paths": [
+    "data/rainforest/image_01.png",
+    "data/rainforest/image_02.png",
+    "data/rainforest/image_03.png",
+    "data/rainforest/image_04.png",
+    "data/rainforest/image_05.png"
+  ],
+  "image_hw": [
+    294,
+    518
+  ],
+  "preprocessed_shape": [
+    5,
+    3,
+    294,
+    518
+  ],
+  "depth_shape": [
+    5,
+    294,
+    518,
+    1
+  ],
+  "depth_conf_shape": [
+    5,
+    294,
+    518
+  ],
+  "world_points_shape": [
+    5,
+    294,
+    518,
+    3
+  ],
+  "world_points_conf_shape": [
+    5,
+    294,
+    518
+  ],
+  "world_points_from_depth_shape": [
+    5,
+    294,
+    518,
+    3
+  ],
+  "extrinsic_shape": [
+    5,
+    3,
+    4
+  ],
+  "intrinsic_shape": [
+    5,
+    3,
+    3
+  ]
+}

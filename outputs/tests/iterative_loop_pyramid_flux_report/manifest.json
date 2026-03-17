@@ -1,0 +1,211 @@
+{
+  "device": "mps",
+  "pipeline_config": {
+    "data_dir": "data",
+    "output_dir": "outputs",
+    "input_image_stem": "image_01",
+    "vggt_model_id": "facebook/VGGT-1B",
+    "inpaint_model_id": "black-forest-labs/FLUX.2-klein-4B",
+    "inpaint_backend": "auto",
+    "bfl_api_base_url": "https://api.bfl.ai",
+    "bfl_api_key_env": "BFL_API_KEY",
+    "bfl_poll_interval_seconds": 1.0,
+    "bfl_timeout_seconds": 600,
+    "bfl_safety_tolerance": 2,
+    "bfl_output_format": "png",
+    "openrouter_api_base_url": "https://openrouter.ai/api/v1",
+    "openrouter_api_key_env": "OPENROUTER_API_KEY",
+    "openrouter_timeout_seconds": 300,
+    "openrouter_image_size": "1K",
+    "preprocess_mode": "crop",
+    "vggt_conf_percentile": 55.0,
+    "max_points_plot": 20000,
+    "max_points_render": 120000,
+    "render_point_radius": 2,
+    "novel_shift_right": 0.12,
+    "novel_yaw_deg": -4.0,
+    "novel_pitch_deg": 0.0,
+    "novel_roll_deg": 0.0,
+    "mask_dilate_px": 4,
+    "mask_close_px": 3,
+    "mask_exterior_only": true,
+    "mask_support_close_px": 24,
+    "mask_support_dilate_px": 6,
+    "mask_fill_rgb": [
+      255,
+      255,
+      255
+    ],
+    "inpaint_steps": 6,
+    "inpaint_guidance_scale": 1.0,
+    "inpaint_prompt": "Photorealistic continuation of the same single Great Pyramid of Giza scene from the target sparse render viewpoint. The visible sparse render is incomplete only because of missing reconstructed points, not because the pyramid is damaged, broken, collapsed, stepped, hollow, or split. Fill missing regions only, preserve the visible rendered geometry, keep the camera pose consistent with the target view, and reconstruct one intact, continuous Egyptian pyramid with a clean apex, straight edges, continuous limestone faces, a stable base, and consistent desert terrain, sky, sunlight, and Giza surroundings. Do not create ruins, openings, cavities, missing chunks, duplicated pyramids, extra monuments, mirrored structures, or fragmented geometry.",
+    "inpaint_negative_prompt": "changes to visible regions, duplicated objects, warped geometry, blurry details, oversmoothing",
+    "seed": 1,
+    "n_frames_per_video": 4,
+    "max_iterations": 1,
+    "n_orbit_fill_views": 4
+  },
+  "loop_config": {
+    "max_total_views": 8,
+    "start_view_count": 0,
+    "max_reference_images": 0,
+    "max_iterations": 4,
+    "environment_anchor_count": 4,
+    "environment_anchor_start_iteration": 1,
+    "step_scale": 1.0,
+    "min_step_deg": 0.0,
+    "output_root": "outputs/tests/iterative_loop_pyramid_flux_report"
+  },
+  "subject": "pyramid",
+  "initial_video_path": "data/Pyramid.mp4",
+  "input_background_masking": {
+    "enabled": false,
+    "distance_threshold": null,
+    "masked_seed_images": [],
+    "masked_seed_masks": []
+  },
+  "background_filter": null,
+  "resolved_start_view_count": 4,
+  "raw_initial_images": [
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png"
+  ],
+  "initial_images": [
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png"
+  ],
+  "environment_anchor_paths": [
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png"
+  ],
+  "iterations": [
+    {
+      "iteration_index": 1,
+      "stats_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/stats.json",
+      "generated_raw_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/03_flux/generated_raw.png",
+      "generated_vggt_input_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/03_flux/generated_raw.png",
+      "largest_gap_before_deg": 179.90833020991641,
+      "largest_gap_after_deg": 162.64180323342094,
+      "gap_improvement_deg": 17.26652697649547,
+      "min_angle_to_existing_deg": 0.9345982629081167
+    },
+    {
+      "iteration_index": 2,
+      "stats_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/stats.json",
+      "generated_raw_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/03_flux/generated_raw.png",
+      "generated_vggt_input_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/03_flux/generated_raw.png",
+      "largest_gap_before_deg": 162.64180323342094,
+      "largest_gap_after_deg": 118.82454144352337,
+      "gap_improvement_deg": 43.81726178989757,
+      "min_angle_to_existing_deg": 44.05212467469764
+    },
+    {
+      "iteration_index": 3,
+      "stats_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/stats.json",
+      "generated_raw_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/03_flux/generated_raw.png",
+      "generated_vggt_input_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/03_flux/generated_raw.png",
+      "largest_gap_before_deg": 118.82454144352337,
+      "largest_gap_after_deg": 121.80443003499487,
+      "gap_improvement_deg": -2.979888591471493,
+      "min_angle_to_existing_deg": 6.647140100256409
+    },
+    {
+      "iteration_index": 4,
+      "stats_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/stats.json",
+      "generated_raw_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/03_flux/generated_raw.png",
+      "generated_vggt_input_path": "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/03_flux/generated_raw.png",
+      "largest_gap_before_deg": 121.80443003499487,
+      "largest_gap_after_deg": 124.99390981133739,
+      "gap_improvement_deg": -3.189479776342523,
+      "min_angle_to_existing_deg": 1.8526614916092787
+    }
+  ],
+  "current_image_paths": [
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/03_flux/generated_raw.png"
+  ],
+  "stop_reason": "max_total_views_reached",
+  "final_scene_summary": {
+    "device": "mps",
+    "image_paths": [
+      "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/03_flux/generated_raw.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/03_flux/generated_raw.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/03_flux/generated_raw.png",
+      "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/03_flux/generated_raw.png"
+    ],
+    "image_hw": [
+      518,
+      518
+    ],
+    "preprocessed_shape": [
+      8,
+      3,
+      518,
+      518
+    ],
+    "depth_shape": [
+      8,
+      518,
+      518,
+      1
+    ],
+    "depth_conf_shape": [
+      8,
+      518,
+      518
+    ],
+    "world_points_shape": [
+      8,
+      518,
+      518,
+      3
+    ],
+    "world_points_conf_shape": [
+      8,
+      518,
+      518
+    ],
+    "world_points_from_depth_shape": [
+      8,
+      518,
+      518,
+      3
+    ],
+    "extrinsic_shape": [
+      8,
+      3,
+      4
+    ],
+    "intrinsic_shape": [
+      8,
+      3,
+      3
+    ]
+  },
+  "final_image_paths": [
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_000.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_001.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_002.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/00_seed_frames/Pyramid_frame_003.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_01/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_02/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_03/03_flux/generated_raw.png",
+    "outputs/tests/iterative_loop_pyramid_flux_report/iter_04/03_flux/generated_raw.png"
+  ]
+}

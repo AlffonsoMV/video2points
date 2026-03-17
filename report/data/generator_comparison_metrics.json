@@ -1,0 +1,693 @@
+{
+  "runs": {
+    "plant_flux": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_plant_flux_report",
+      "subject": "plant",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 354.62448232130174,
+      "final_gap_deg": 336.0008787189948,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 354.62448232130174
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 347.8550715896184
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 341.7026591664189
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 334.9496528415746
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 336.0008787189948
+        }
+      ],
+      "rotation_errors_deg": [
+        0.3830204983083768,
+        7.7139531729610304,
+        7.851564392165084,
+        15.997374692431714
+      ],
+      "mean_rotation_error_deg": 7.986478188966552,
+      "total_cost": null
+    },
+    "plant_nanobanana": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_plant_nanobanana",
+      "subject": "plant",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 354.62448232130174,
+      "final_gap_deg": 324.5305066212328,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 354.62448232130174
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 347.41938492152065
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 339.3126103437441
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 332.71054949200976
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 324.5305066212328
+        }
+      ],
+      "rotation_errors_deg": [
+        0.40276749183004423,
+        7.093853462410837,
+        11.6311703884582,
+        9.333968538740669
+      ],
+      "mean_rotation_error_deg": 7.115439970359938,
+      "total_cost": 0.275346
+    },
+    "chair_flux": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_chair1_filtered_t30",
+      "subject": "chair",
+      "iterations_completed": 3,
+      "baseline_gap_deg": 327.3998759217443,
+      "final_gap_deg": 222.4100602270002,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 327.3998759217443
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 281.8377808366645
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 247.39633338082172
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 222.4100602270002
+        }
+      ],
+      "rotation_errors_deg": [
+        2.0548817317288703,
+        14.324088156148251,
+        18.140014531930202
+      ],
+      "mean_rotation_error_deg": 11.506328139935775,
+      "total_cost": null
+    },
+    "chair_nanobanana": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_chair1_nanobanana",
+      "subject": "chair",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 335.29808128170447,
+      "final_gap_deg": 249.45151681151103,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 335.29808128170447
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 334.17836909747655
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 327.11192197652576
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 248.2103894770497
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 249.45151681151103
+        }
+      ],
+      "rotation_errors_deg": [
+        39.945229272675995,
+        28.974011764629388,
+        134.97265453737262,
+        117.18788735392376
+      ],
+      "mean_rotation_error_deg": 80.26994573215043,
+      "total_cost": 0.27514
+    },
+    "colosseum_flux": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_colosseum_flux_report",
+      "subject": "colosseum",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 348.80339212945586,
+      "final_gap_deg": 267.0908969846083,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 348.80339212945586
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 339.9076752072558
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 322.03015195100954
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 288.22701982405033
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 267.0908969846083
+        }
+      ],
+      "rotation_errors_deg": [
+        2.192145010168094,
+        0.968357009306977,
+        1.7722173672841708,
+        61.41935241062414
+      ],
+      "mean_rotation_error_deg": 16.588017949345847,
+      "total_cost": null
+    },
+    "colosseum_nanobanana": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_colosseum_nanobanana",
+      "subject": "colosseum",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 348.80339212945586,
+      "final_gap_deg": 341.7942161446956,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 348.80339212945586
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 349.0311328344989
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 346.57038130863066
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 340.80487519625035
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 341.7942161446956
+        }
+      ],
+      "rotation_errors_deg": [
+        15.648743347788235,
+        7.151092736081281,
+        2.5835420046313504,
+        13.147618076161168
+      ],
+      "mean_rotation_error_deg": 9.632749041165509,
+      "total_cost": 0.276304
+    },
+    "pyramid_flux": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_pyramid_flux_report",
+      "subject": "pyramid",
+      "iterations_completed": 4,
+      "baseline_gap_deg": 179.90833020991641,
+      "final_gap_deg": 124.99390981133739,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 179.90833020991641
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 162.64180323342094
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 118.82454144352337
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 121.80443003499487
+        },
+        {
+          "iteration": 4,
+          "largest_unseen_gap_deg": 124.99390981133739
+        }
+      ],
+      "rotation_errors_deg": [
+        94.96432760150157,
+        27.12449436508928,
+        98.16556162642499,
+        133.68365362225845
+      ],
+      "mean_rotation_error_deg": 88.48450930381857,
+      "total_cost": null
+    },
+    "pyramid_nanobanana": {
+      "root": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/outputs/tests/iterative_loop_pyramid_nanobanana",
+      "subject": "pyramid",
+      "iterations_completed": 3,
+      "baseline_gap_deg": 179.90833020991641,
+      "final_gap_deg": 127.17514438315929,
+      "gap_series": [
+        {
+          "iteration": 0,
+          "largest_unseen_gap_deg": 179.90833020991641
+        },
+        {
+          "iteration": 1,
+          "largest_unseen_gap_deg": 176.70189790405394
+        },
+        {
+          "iteration": 2,
+          "largest_unseen_gap_deg": 175.78726727229753
+        },
+        {
+          "iteration": 3,
+          "largest_unseen_gap_deg": 127.17514438315929
+        }
+      ],
+      "rotation_errors_deg": [
+        92.33305619393842,
+        99.30632572444745,
+        83.15621141711198
+      ],
+      "mean_rotation_error_deg": 91.59853111183263,
+      "total_cost": 0.20691749999999998
+    }
+  },
+  "figure_paths": {
+    "comparison_plant_target_rerender_grid": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/report/figures/comparison_plant_target_rerender_grid.png",
+    "comparison_plant_metrics": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/report/figures/comparison_plant_metrics.png",
+    "comparison_colosseum_flux_vs_nanobanana": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/report/figures/comparison_colosseum_flux_vs_nanobanana.png",
+    "comparison_pyramid_flux_vs_nanobanana": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/report/figures/comparison_pyramid_flux_vs_nanobanana.png",
+    "limitations_chair_generator_vs_reconstruction": "/Users/alfonsomateos/Documents/Polytechnique/M2.2/3D Computer Vision/Project 3DCV/report/figures/limitations_chair_generator_vs_reconstruction.png"
+  },
+  "generator_fidelity_metrics": {
+    "labels": [
+      "Plant",
+      "Colosseum",
+      "Pyramid",
+      "Average"
+    ],
+    "target_to_generated": {
+      "supported_pixel_mae": {
+        "flux": [
+          31.78941583633423,
+          30.114562511444092,
+          62.145386695861816,
+          41.34978834788004
+        ],
+        "nanobanana": [
+          24.596861362457275,
+          19.417270183563232,
+          45.32494990030924,
+          29.77969381544325
+        ]
+      },
+      "per_run": {
+        "plant_flux": {
+          "mae_mean": 31.78941583633423,
+          "mae_series": [
+            21.932161331176758,
+            32.93641662597656,
+            34.312191009521484,
+            37.97689437866211
+          ],
+          "rmse_mean": 46.56649589538574,
+          "rmse_series": [
+            33.60721969604492,
+            50.65177536010742,
+            48.765560150146484,
+            53.24142837524414
+          ],
+          "psnr_mean": 14.903852745494621,
+          "psnr_series": [
+            17.602151907704293,
+            14.038910166348188,
+            14.368539265789986,
+            13.605809642136016
+          ],
+          "support_ratio_mean": 0.5853976243006855,
+          "support_ratio_series": [
+            0.5711577101883224,
+            0.565139665904972,
+            0.576919667480892,
+            0.6283734536285557
+          ]
+        },
+        "plant_nanobanana": {
+          "mae_mean": 24.596861362457275,
+          "mae_series": [
+            16.244680404663086,
+            20.298871994018555,
+            30.524398803710938,
+            31.319494247436523
+          ],
+          "rmse_mean": 36.79145574569702,
+          "rmse_series": [
+            25.75687599182129,
+            32.06712341308594,
+            44.2575569152832,
+            45.084266662597656
+          ],
+          "psnr_mean": 17.045975425438026,
+          "psnr_series": [
+            19.91293986798917,
+            18.009603544413704,
+            15.211054877991103,
+            15.050303411358126
+          ],
+          "support_ratio_mean": 0.566528445354976,
+          "support_ratio_series": [
+            0.5711577101883224,
+            0.5562751162240959,
+            0.5379796706327319,
+            0.6007012843747538
+          ]
+        },
+        "colosseum_flux": {
+          "mae_mean": 30.114562511444092,
+          "mae_series": [
+            39.218833923339844,
+            21.939470291137695,
+            19.1014404296875,
+            40.19850540161133
+          ],
+          "rmse_mean": 50.420969009399414,
+          "rmse_series": [
+            64.86453247070312,
+            45.26826477050781,
+            36.570220947265625,
+            54.980857849121094
+          ],
+          "psnr_mean": 14.275102431335826,
+          "psnr_series": [
+            11.89065776596059,
+            15.014926661136183,
+            16.86825192399184,
+            13.326573374254693
+          ],
+          "support_ratio_mean": 0.36649988180600424,
+          "support_ratio_series": [
+            0.5282089669844772,
+            0.5187206156593912,
+            0.31849998686733383,
+            0.10056995771281485
+          ]
+        },
+        "colosseum_nanobanana": {
+          "mae_mean": 19.417270183563232,
+          "mae_series": [
+            21.76909637451172,
+            15.611482620239258,
+            21.511077880859375,
+            18.777423858642578
+          ],
+          "rmse_mean": 33.82568645477295,
+          "rmse_series": [
+            33.001949310302734,
+            25.137935638427734,
+            44.91659164428711,
+            32.24626922607422
+          ],
+          "psnr_mean": 17.732026247540116,
+          "psnr_series": [
+            17.760011750693845,
+            20.124211409501378,
+            15.082667733577422,
+            17.961214096387824
+          ],
+          "support_ratio_mean": 0.6034985422740524,
+          "support_ratio_series": [
+            0.5282089669844772,
+            0.6640007354293068,
+            0.6232106742310823,
+            0.5985737924513435
+          ]
+        },
+        "pyramid_flux": {
+          "mae_mean": 62.145386695861816,
+          "mae_series": [
+            43.3559455871582,
+            93.03018188476562,
+            52.03870391845703,
+            60.156715393066406
+          ],
+          "rmse_mean": 75.76748180389404,
+          "rmse_series": [
+            52.151424407958984,
+            108.49069213867188,
+            67.5485610961914,
+            74.8792495727539
+          ],
+          "psnr_mean": 10.847622407692084,
+          "psnr_series": [
+            13.78548011313341,
+            7.422954011110382,
+            11.538481564357445,
+            10.643573942167103
+          ],
+          "support_ratio_mean": 0.5195379466614988,
+          "support_ratio_series": [
+            0.4713555254095795,
+            0.3705445655252605,
+            0.6550439021481492,
+            0.5812077935630059
+          ]
+        },
+        "pyramid_nanobanana": {
+          "mae_mean": 45.32494990030924,
+          "mae_series": [
+            46.458412170410156,
+            43.7059440612793,
+            45.81049346923828
+          ],
+          "rmse_mean": 61.93839772542318,
+          "rmse_series": [
+            63.973594665527344,
+            60.56034469604492,
+            61.281253814697266
+          ],
+          "psnr_mean": 12.29402537450403,
+          "psnr_series": [
+            12.010788521937105,
+            12.487036840541478,
+            12.38425076103351
+          ],
+          "support_ratio_mean": 0.49808937453725105,
+          "support_ratio_series": [
+            0.4713555254095795,
+            0.49316497965146616,
+            0.5297476185507074
+          ]
+        }
+      }
+    },
+    "target_to_rerender": {
+      "supported_pixel_mae": {
+        "flux": [
+          32.920406341552734,
+          46.17376136779785,
+          50.415698528289795,
+          43.16995541254679
+        ],
+        "nanobanana": [
+          35.73075580596924,
+          32.34644603729248,
+          28.49153200785319,
+          32.189577950371635
+        ]
+      },
+      "per_run": {
+        "plant_flux": {
+          "mae_mean": 32.920406341552734,
+          "mae_series": [
+            25.628759384155273,
+            28.305788040161133,
+            41.68292999267578,
+            36.06414794921875
+          ],
+          "rmse_mean": 52.1702299118042,
+          "rmse_series": [
+            43.58743667602539,
+            47.366790771484375,
+            63.23594665527344,
+            54.490745544433594
+          ],
+          "psnr_mean": 13.870193283999841,
+          "psnr_series": [
+            15.343577019878957,
+            14.621324386760719,
+            12.111523120245044,
+            13.404348609114642
+          ],
+          "support_ratio_mean": 0.5853976243006855,
+          "support_ratio_series": [
+            0.5711577101883224,
+            0.565139665904972,
+            0.576919667480892,
+            0.6283734536285557
+          ]
+        },
+        "plant_nanobanana": {
+          "mae_mean": 35.73075580596924,
+          "mae_series": [
+            38.79712677001953,
+            32.56711959838867,
+            35.061988830566406,
+            36.496788024902344
+          ],
+          "rmse_mean": 56.05412006378174,
+          "rmse_series": [
+            61.88874053955078,
+            51.58804702758789,
+            54.35009002685547,
+            56.38960266113281
+          ],
+          "psnr_mean": 13.178003438641735,
+          "psnr_series": [
+            12.298570714328019,
+            13.879821867338624,
+            13.426798252694962,
+            13.10682292020533
+          ],
+          "support_ratio_mean": 0.566528445354976,
+          "support_ratio_series": [
+            0.5711577101883224,
+            0.5562751162240959,
+            0.5379796706327319,
+            0.6007012843747538
+          ]
+        },
+        "colosseum_flux": {
+          "mae_mean": 46.17376136779785,
+          "mae_series": [
+            35.025108337402344,
+            38.220298767089844,
+            42.08350372314453,
+            69.36613464355469
+          ],
+          "rmse_mean": 70.68930053710938,
+          "rmse_series": [
+            58.71694564819336,
+            61.58933639526367,
+            64.89981842041016,
+            97.55110168457031
+          ],
+          "psnr_mean": 11.332080402993114,
+          "psnr_series": [
+            12.755534483405606,
+            12.34069311395886,
+            11.885933974404912,
+            8.34616004020307
+          ],
+          "support_ratio_mean": 0.36649988180600424,
+          "support_ratio_series": [
+            0.5282089669844772,
+            0.5187206156593912,
+            0.31849998686733383,
+            0.10056995771281485
+          ]
+        },
+        "colosseum_nanobanana": {
+          "mae_mean": 32.34644603729248,
+          "mae_series": [
+            30.820802688598633,
+            40.346649169921875,
+            26.65948486328125,
+            31.558847427368164
+          ],
+          "rmse_mean": 52.1301965713501,
+          "rmse_series": [
+            49.023338317871094,
+            66.25193786621094,
+            44.85262680053711,
+            48.39288330078125
+          ],
+          "psnr_mean": 13.889949363633022,
+          "psnr_series": [
+            14.322745971514374,
+            11.706831890904152,
+            15.095045955805102,
+            14.435173636308463
+          ],
+          "support_ratio_mean": 0.6034985422740524,
+          "support_ratio_series": [
+            0.5282089669844772,
+            0.6640007354293068,
+            0.6232106742310823,
+            0.5985737924513435
+          ]
+        },
+        "pyramid_flux": {
+          "mae_mean": 50.415698528289795,
+          "mae_series": [
+            29.509706497192383,
+            50.697357177734375,
+            56.54891586303711,
+            64.90681457519531
+          ],
+          "rmse_mean": 69.81287002563477,
+          "rmse_series": [
+            46.26093292236328,
+            69.48823547363281,
+            77.41690826416016,
+            86.08540344238281
+          ],
+          "psnr_mean": 11.47634854442348,
+          "psnr_series": [
+            14.826515873990973,
+            11.292577934535778,
+            10.354087143374812,
+            9.432213225792358
+          ],
+          "support_ratio_mean": 0.5195379466614988,
+          "support_ratio_series": [
+            0.4713555254095795,
+            0.3705445655252605,
+            0.6550439021481492,
+            0.5812077935630059
+          ]
+        },
+        "pyramid_nanobanana": {
+          "mae_mean": 28.49153200785319,
+          "mae_series": [
+            32.27287292480469,
+            27.31032943725586,
+            25.891393661499023
+          ],
+          "rmse_mean": 46.88225428263346,
+          "rmse_series": [
+            53.4870491027832,
+            45.236454010009766,
+            41.92325973510742
+          ],
+          "psnr_mean": 14.75618869982145,
+          "psnr_series": [
+            13.565830840806527,
+            15.021032525451108,
+            15.681702733206713
+          ],
+          "support_ratio_mean": 0.49808937453725105,
+          "support_ratio_series": [
+            0.4713555254095795,
+            0.49316497965146616,
+            0.5297476185507074
+          ]
+        }
+      }
+    }
+  }
+}
