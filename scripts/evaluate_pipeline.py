@@ -9,13 +9,6 @@ import numpy as np
 import utils
 
 
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"}
-
-
-def list_data_images(data_dir: str | Path) -> list[Path]:
-    return sorted([p for p in Path(data_dir).glob("*") if p.is_file() and p.suffix in IMAGE_SUFFIXES])
-
-
 def render_merged_scene_at_camera(
     scene: dict[str, Any],
     extrinsic: np.ndarray,
@@ -54,64 +47,6 @@ def metric_improvement(candidate: dict[str, Any], baseline: dict[str, Any]) -> d
 def save_image_grid(images: list, titles: list[str], path: Path, figsize: tuple[int, int] = (18, 5)) -> None:
     fig, _ = utils.plot_image_grid(images, titles=titles, figsize=figsize)
     utils.save_matplotlib_figure(fig, path)
-
-
-def camera_baseline_scale(extrinsics: np.ndarray, idx_a: int = 0, idx_b: int = 1) -> float:
-    c_a = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_a], dtype=np.float32))
-    c_b = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_b], dtype=np.float32))
-    return float(np.linalg.norm(c_b - c_a))
-
-
-def relative_camera_pose_from_reference(
-    reference_extrinsic: np.ndarray,
-    target_extrinsic: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    ref = np.asarray(reference_extrinsic, dtype=np.float32)
-    tgt = np.asarray(target_extrinsic, dtype=np.float32)
-    c_ref = utils.camera_center_from_extrinsic(ref)
-    c_tgt = utils.camera_center_from_extrinsic(tgt)
-    delta_world = c_tgt - c_ref
-    delta_in_ref_camera = ref[:, :3] @ delta_world
-    relative_rotation = tgt[:, :3] @ ref[:, :3].T
-    return relative_rotation.astype(np.float32), delta_in_ref_camera.astype(np.float32)
-
-
-def rotation_error_deg(rotation_a: np.ndarray, rotation_b: np.ndarray) -> float:
-    delta = np.asarray(rotation_a, dtype=np.float64) @ np.asarray(rotation_b, dtype=np.float64).T
-    trace_value = float(np.trace(delta))
-    cos_angle = np.clip((trace_value - 1.0) / 2.0, -1.0, 1.0)
-    return float(np.degrees(np.arccos(cos_angle)))
-
-
-def vector_angle_deg(vector_a: np.ndarray, vector_b: np.ndarray, eps: float = 1e-8) -> float:
-    a = np.asarray(vector_a, dtype=np.float64)
-    b = np.asarray(vector_b, dtype=np.float64)
-    norm_a = float(np.linalg.norm(a))
-    norm_b = float(np.linalg.norm(b))
-    if norm_a < eps or norm_b < eps:
-        return 0.0
-    cos_angle = np.clip(float(np.dot(a, b)) / (norm_a * norm_b), -1.0, 1.0)
-    return float(np.degrees(np.arccos(cos_angle)))
-
-
-def relative_pose_comparison(
-    target_rotation: np.ndarray,
-    target_translation: np.ndarray,
-    predicted_rotation: np.ndarray,
-    predicted_translation: np.ndarray,
-) -> dict[str, float]:
-    target_translation = np.asarray(target_translation, dtype=np.float32)
-    predicted_translation = np.asarray(predicted_translation, dtype=np.float32)
-    target_norm = float(np.linalg.norm(target_translation))
-    predicted_norm = float(np.linalg.norm(predicted_translation))
-    return {
-        "rotation_error_deg": rotation_error_deg(predicted_rotation, target_rotation),
-        "translation_l2_normalized": float(np.linalg.norm(predicted_translation - target_translation)),
-        "translation_direction_error_deg": vector_angle_deg(predicted_translation, target_translation),
-        "target_translation_norm": target_norm,
-        "predicted_translation_norm": predicted_norm,
-        "translation_norm_ratio_pred_over_target": float(predicted_norm / target_norm) if target_norm > 1e-8 else 0.0,
-    }
 
 
 def evaluate_novel_view_regeneration(
@@ -171,11 +106,11 @@ def evaluate_novel_view_regeneration(
     base_extrinsics = np.asarray(scene_base["extrinsic"], dtype=np.float32)
     augmented_extrinsics = np.asarray(scene_augmented["extrinsic"], dtype=np.float32)
     generated_index = len(data_images)
-    base_scale = camera_baseline_scale(base_extrinsics, idx_a=0, idx_b=1)
-    augmented_scale = camera_baseline_scale(augmented_extrinsics, idx_a=0, idx_b=1)
+    base_scale = utils.camera_baseline_scale(base_extrinsics, idx_a=0, idx_b=1)
+    augmented_scale = utils.camera_baseline_scale(augmented_extrinsics, idx_a=0, idx_b=1)
 
-    target_rotation, target_translation = relative_camera_pose_from_reference(base_extrinsics[0], novel_extr)
-    predicted_generated_rotation, predicted_generated_translation = relative_camera_pose_from_reference(
+    target_rotation, target_translation = utils.relative_camera_pose_from_reference(base_extrinsics[0], novel_extr)
+    predicted_generated_rotation, predicted_generated_translation = utils.relative_camera_pose_from_reference(
         augmented_extrinsics[0],
         augmented_extrinsics[generated_index],
     )
@@ -192,7 +127,7 @@ def evaluate_novel_view_regeneration(
 
     original_pose_comparisons: list[dict[str, Any]] = []
     for idx in range(1, len(data_images)):
-        original_rotation, original_translation = relative_camera_pose_from_reference(
+        original_rotation, original_translation = utils.relative_camera_pose_from_reference(
             base_extrinsics[0],
             base_extrinsics[idx],
         )
@@ -201,7 +136,7 @@ def evaluate_novel_view_regeneration(
             {
                 "original_index": idx,
                 "original_path": str(data_images[idx]),
-                **relative_pose_comparison(
+                **utils.relative_pose_comparison(
                     original_rotation,
                     original_translation_normalized,
                     predicted_generated_rotation,
@@ -244,7 +179,7 @@ def evaluate_novel_view_regeneration(
         "camera_pose_metrics": {
             "note": "Pose comparisons use camera-0-relative geometry and baseline-normalized translations so the result is meaningful even if the two reconstructions use slightly different global frames or scales.",
             "generated_view_index": generated_index,
-            "target_vs_predicted_generated": relative_pose_comparison(
+            "target_vs_predicted_generated": utils.relative_pose_comparison(
                 target_rotation,
                 target_translation_normalized,
                 predicted_generated_rotation,
@@ -274,13 +209,13 @@ def main() -> None:
     )
     utils.seed_everything(cfg.seed)
 
-    data_images = list_data_images(cfg.data_dir)
+    data_images = utils.list_data_images(cfg.data_dir)
     if len(data_images) < 2:
         raise RuntimeError(f"Need at least 2 real images in {cfg.data_dir}. Found: {data_images}")
 
-    out_root = utils.ensure_dir(Path(cfg.output_dir) / "tests" / "eval")
+    out_root = utils.ensure_dir(Path(cfg.output_dir) / "eval")
     novel_dir = utils.ensure_dir(out_root / "novel_view_regeneration")
-    e2e_dir = Path(cfg.output_dir) / "tests" / "e2e"
+    e2e_dir = Path(cfg.output_dir) / "e2e"
 
     device = utils.get_device()
     print(f"Device: {device}")

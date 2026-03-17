@@ -10,13 +10,27 @@ This repository wraps a small 3D vision pipeline around a vendored copy of VGGT.
 
 ## Project layout
 
-- `utils.py`: shared pipeline code and the main `PipelineConfig`
+- `pipeline/`: core logic split into modules (config, geometry, orbit, point_cloud, rendering, vggt, inpainting, metrics, viz)
+- `utils.py`: re-exports `pipeline` for backward compatibility (`import utils` still works)
 - `scripts/test_utils_synthetic.py`: fast smoke test for rendering, masking, and fallback inpainting
 - `scripts/test_pipeline_e2e.py`: full pipeline on the images in `data/`
 - `notebooks/vggt_coliseum_inpaint_pipeline.ipynb`: interactive notebook version of the full pipeline
 - `data/`: sample inputs (`image_01.png`, `image_02.png`)
-- `outputs/`: generated figures and intermediate artifacts
+- `outputs/`: generated figures and intermediate artifacts (see Output layout below)
 - `vendor/vggt/`: vendored VGGT package
+
+## Output layout
+
+- `outputs/e2e/`: single-step pipeline (`test_pipeline_e2e`)
+- `outputs/synthetic/`: smoke test (`test_utils_synthetic`)
+- `outputs/iterative/<video_stem>/`: iterative orbit pipeline (`run_with_videos`)
+  - `01_inputs/frames/`: extracted video frames
+  - `02_initial/`: point cloud after first VGGT
+  - `03_iterations/iter_XXX/view_YY/`: per-view pipeline (render → hole mask → inpaint → flux → final)
+  - `04_final/`: final point cloud
+  - `manifest.json`, `STRUCTURE.txt`: run metadata
+- `outputs/iterative/<run_name>/`: legacy iterative loop (`run_iterative_loop`) — different layout
+- `outputs/eval/`: evaluation metrics (`evaluate_pipeline`)
 
 ## Quickstart
 
@@ -48,7 +62,7 @@ Smoke test the geometry/rendering utilities:
 python -m scripts.test_utils_synthetic
 ```
 
-This writes debug images to `outputs/tests/synthetic/`.
+This writes debug images to `outputs/synthetic/`.
 
 Run the full pipeline:
 
@@ -56,7 +70,7 @@ Run the full pipeline:
 python -m scripts.test_pipeline_e2e
 ```
 
-This uses all image files in `data/`, downloads the VGGT and inpainting weights on first run, and saves outputs to `outputs/tests/e2e/`.
+This uses all image files in `data/`, downloads the VGGT and inpainting weights on first run, and saves outputs to `outputs/e2e/`.
 
 ## What the full pipeline does
 

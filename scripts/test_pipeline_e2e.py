@@ -8,45 +8,6 @@ import numpy as np
 import utils
 
 
-def _list_data_images(data_dir: str | Path) -> list[Path]:
-    exts = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"}
-    return sorted([p for p in Path(data_dir).glob("*") if p.is_file() and p.suffix in exts])
-
-
-def _merged_scene_point_cloud(
-    scene: dict,
-    view_indices: list[int],
-    conf_percentile: float,
-    max_points: int | None,
-    prefer_depth_unprojection: bool = True,
-    seed: int = 0,
-) -> tuple[np.ndarray, np.ndarray]:
-    pts_all, cols_all = [], []
-    for idx in view_indices:
-        pts, cols, _ = utils.build_point_cloud_from_scene(
-            scene,
-            view_idx=idx,
-            conf_percentile=conf_percentile,
-            max_points=None,
-            prefer_depth_unprojection=prefer_depth_unprojection,
-        )
-        if len(pts):
-            pts_all.append(pts)
-            cols_all.append(cols)
-
-    if not pts_all:
-        return np.empty((0, 3), dtype=np.float32), np.empty((0, 3), dtype=np.float32)
-
-    pts = np.concatenate(pts_all, axis=0)
-    cols = np.concatenate(cols_all, axis=0)
-    if max_points is not None and len(pts) > max_points:
-        rng = np.random.default_rng(seed)
-        idx = rng.choice(len(pts), size=max_points, replace=False)
-        pts = pts[idx]
-        cols = cols[idx]
-    return pts.astype(np.float32), cols.astype(np.float32)
-
-
 def main() -> None:
     cfg = utils.PipelineConfig(
         preprocess_mode="crop",
@@ -64,9 +25,9 @@ def main() -> None:
 
     utils.seed_everything(cfg.seed)
     device = utils.get_device()
-    out_dir = utils.ensure_dir(Path(cfg.output_dir) / "tests" / "e2e")
+    out_dir = utils.ensure_dir(Path(cfg.output_dir) / "e2e")
 
-    data_images = _list_data_images(cfg.data_dir)
+    data_images = utils.list_data_images(cfg.data_dir)
     if len(data_images) < 2:
         raise RuntimeError(f"Need at least 2 images in {cfg.data_dir} for this test, found: {data_images}")
     src_imgs = [utils.ensure_png_copy(p) for p in data_images]
@@ -82,26 +43,24 @@ def main() -> None:
     print(json.dumps(summary1, indent=2, default=str))
 
     initial_view_indices = list(range(len(src_imgs)))
-    pts1, cols1 = _merged_scene_point_cloud(
+    pts1, cols1 = utils.merge_scene_point_cloud(
         scene1,
         view_indices=initial_view_indices,
         conf_percentile=cfg.vggt_conf_percentile,
         max_points=cfg.max_points_plot,
-        prefer_depth_unprojection=True,
-        seed=cfg.seed,
+        rng_seed=cfg.seed,
     )
     fig1, _ = utils.plot_point_cloud_3d(pts1, cols1, title="Initial Multi-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig1, out_dir / "01_single_view_point_cloud.png")
     utils.save_point_cloud_ply(pts1, cols1, out_dir / "01_single_view_point_cloud.ply")
 
     print("\n[2/6] Rendering projection from VGGT camera...")
-    pts_render, cols_render = _merged_scene_point_cloud(
+    pts_render, cols_render = utils.merge_scene_point_cloud(
         scene1,
         view_indices=initial_view_indices,
         conf_percentile=cfg.vggt_conf_percentile,
         max_points=cfg.max_points_render,
-        prefer_depth_unprojection=True,
-        seed=cfg.seed,
+        rng_seed=cfg.seed,
     )
     base_extr = np.asarray(scene1["extrinsic"][0], dtype=np.float32)
     base_intr = np.asarray(scene1["intrinsic"][0], dtype=np.float32)
@@ -220,13 +179,12 @@ def main() -> None:
     summary2 = utils.describe_scene(scene2)
     print(json.dumps(summary2, indent=2, default=str))
 
-    pts2, cols2 = _merged_scene_point_cloud(
+    pts2, cols2 = utils.merge_scene_point_cloud(
         scene2,
         view_indices=list(range(len(src_imgs) + 1)),
         conf_percentile=cfg.vggt_conf_percentile,
         max_points=cfg.max_points_plot,
-        prefer_depth_unprojection=True,
-        seed=cfg.seed,
+        rng_seed=cfg.seed,
     )
     fig2, _ = utils.plot_point_cloud_3d(pts2, cols2, title="Augmented Multi-view VGGT Reconstruction", point_size=0.25)
     utils.save_matplotlib_figure(fig2, out_dir / "06_two_view_point_cloud.png")

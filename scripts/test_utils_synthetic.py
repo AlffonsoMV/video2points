@@ -8,7 +8,7 @@ import utils
 
 
 def main() -> None:
-    out_dir = utils.ensure_dir("outputs/tests/synthetic")
+    out_dir = utils.ensure_dir("outputs/synthetic")
     utils.seed_everything(0)
 
     n = 4000

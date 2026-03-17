@@ -20,7 +20,7 @@ import utils
 
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"}
-DEFAULT_IMAGE_OUTPUT_ROOT = "outputs/tests/iterative_loop"
+DEFAULT_IMAGE_OUTPUT_ROOT = "outputs/iterative"
 PLANT_INPAINT_PROMPT = (
     "Photorealistic continuation of the same indoor palm tree scene from the target sparse render viewpoint. "
     "Fill missing regions only, preserve the visible rendered geometry, keep the camera pose consistent with the target view, "
@@ -55,7 +55,7 @@ class IterativeLoopConfig:
     environment_anchor_start_iteration: int = 1
     step_scale: float = 1.0
     min_step_deg: float = 0.0
-    output_root: str = "outputs/tests/iterative_loop"
+    output_root: str = "outputs/iterative"
 
 
 @dataclass
@@ -86,10 +86,6 @@ class BackgroundColorFilter:
     source_image_count: int
 
 
-def list_data_images(data_dir: str | Path) -> list[Path]:
-    return sorted([p for p in Path(data_dir).glob("*") if p.is_file() and p.suffix in IMAGE_SUFFIXES])
-
-
 def infer_subject_from_video(video_path: str | Path | None) -> str | None:
     if video_path is None:
         return None
@@ -108,7 +104,7 @@ def infer_subject_from_video(video_path: str | Path | None) -> str | None:
 def default_output_root(video_path: str | Path | None) -> str:
     if video_path is None:
         return DEFAULT_IMAGE_OUTPUT_ROOT
-    return f"outputs/tests/iterative_loop_{Path(video_path).stem}"
+    return f"outputs/iterative/{Path(video_path).stem}"
 
 
 def default_inpaint_prompt(subject: str | None, *, video_mode: bool) -> str:
@@ -132,7 +128,7 @@ def resolve_initial_images(
     output_root: str | Path,
 ) -> tuple[list[Path], Path | None]:
     if video_path is None:
-        return list_data_images(data_dir), None
+        return utils.list_data_images(data_dir), None
 
     video_path = Path(video_path)
     if not video_path.exists():
@@ -354,126 +350,6 @@ def build_generation_prompt(
     )
 
 
-def camera_angle_on_orbit(extrinsic: np.ndarray, orbit: utils.OrbitInfo) -> float:
-    cam_center = utils.camera_center_from_extrinsic(np.asarray(extrinsic, dtype=np.float32))
-    centered = cam_center - orbit.centroid
-    projected = centered - np.dot(centered, orbit.normal) * orbit.normal
-    return float(np.arctan2(projected @ orbit.v, projected @ orbit.u))
-
-
-def angular_distance_rad(a: float, b: float) -> float:
-    return float(abs(np.arctan2(np.sin(a - b), np.cos(a - b))))
-
-
-def average_camera_up(extrinsics: list[np.ndarray]) -> np.ndarray:
-    avg_up = np.zeros(3, dtype=np.float32)
-    for extrinsic in extrinsics:
-        r_world_from_cam = np.asarray(extrinsic, dtype=np.float32)[:, :3].T
-        avg_up -= r_world_from_cam[:, 1]  # OpenCV: -Y_cam points upward in world coordinates.
-    norm = float(np.linalg.norm(avg_up))
-    if norm < 1e-8:
-        return np.array([0.0, 1.0, 0.0], dtype=np.float32)
-    return (avg_up / norm).astype(np.float32)
-
-
-def camera_forward_world(extrinsic: np.ndarray) -> np.ndarray:
-    r_world_from_cam = np.asarray(extrinsic, dtype=np.float32)[:, :3].T
-    forward = r_world_from_cam[:, 2]
-    norm = float(np.linalg.norm(forward))
-    if norm < 1e-8:
-        return np.array([0.0, 0.0, 1.0], dtype=np.float32)
-    return (forward / norm).astype(np.float32)
-
-
-def estimate_lookat_point(
-    extrinsics: list[np.ndarray],
-    fallback_centroid: np.ndarray,
-) -> np.ndarray:
-    a = np.zeros((3, 3), dtype=np.float64)
-    b = np.zeros(3, dtype=np.float64)
-    for extrinsic in extrinsics:
-        cam_center = utils.camera_center_from_extrinsic(np.asarray(extrinsic, dtype=np.float32)).astype(np.float64)
-        forward = camera_forward_world(extrinsic).astype(np.float64)
-        projector = np.eye(3, dtype=np.float64) - np.outer(forward, forward)
-        a += projector
-        b += projector @ cam_center
-
-    if not np.isfinite(a).all() or np.linalg.norm(a) < 1e-8:
-        return np.asarray(fallback_centroid, dtype=np.float32)
-
-    lookat, *_ = np.linalg.lstsq(a, b, rcond=None)
-    if not np.isfinite(lookat).all():
-        return np.asarray(fallback_centroid, dtype=np.float32)
-    return np.asarray(lookat, dtype=np.float32)
-
-
-def estimate_horizontal_orbit(
-    extrinsics: list[np.ndarray] | np.ndarray,
-    centroid: np.ndarray,
-) -> tuple[utils.OrbitInfo, float]:
-    extrinsics = [np.asarray(extrinsic, dtype=np.float32) for extrinsic in extrinsics]
-    centroid = estimate_lookat_point(extrinsics, np.asarray(centroid, dtype=np.float32))
-    cam_centers = np.array(
-        [utils.camera_center_from_extrinsic(extrinsic) for extrinsic in extrinsics],
-        dtype=np.float32,
-    )
-
-    up_axis = average_camera_up(extrinsics)
-    centered = cam_centers - centroid
-    height_offsets = centered @ up_axis
-    horizontal = centered - np.outer(height_offsets, up_axis)
-
-    u_basis = horizontal[0]
-    u_norm = float(np.linalg.norm(u_basis))
-    if u_norm < 1e-6:
-        for candidate in horizontal[1:]:
-            u_basis = candidate
-            u_norm = float(np.linalg.norm(u_basis))
-            if u_norm >= 1e-6:
-                break
-    if u_norm < 1e-6:
-        arbitrary = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-        if abs(float(np.dot(arbitrary, up_axis))) > 0.9:
-            arbitrary = np.array([0.0, 0.0, 1.0], dtype=np.float32)
-        u_basis = arbitrary - np.dot(arbitrary, up_axis) * up_axis
-        u_norm = float(np.linalg.norm(u_basis))
-    u_basis = (u_basis / max(u_norm, 1e-8)).astype(np.float32)
-    v_basis = np.cross(up_axis, u_basis).astype(np.float32)
-    v_basis /= max(float(np.linalg.norm(v_basis)), 1e-8)
-
-    radii = np.linalg.norm(horizontal, axis=1)
-    radius = float(np.median(radii))
-
-    angles = np.arctan2(horizontal @ v_basis, horizontal @ u_basis).astype(np.float32)
-    order = np.argsort(angles)
-    angles_sorted = angles[order]
-
-    diffs = np.diff(angles_sorted)
-    wrap_gap = float(2 * np.pi - (angles_sorted[-1] - angles_sorted[0]))
-    all_gaps = np.append(diffs, wrap_gap)
-    gap_idx = int(np.argmax(all_gaps))
-
-    if gap_idx < len(diffs):
-        gap_start = float(angles_sorted[gap_idx])
-        gap_end = float(angles_sorted[gap_idx + 1])
-    else:
-        gap_start = float(angles_sorted[-1])
-        gap_end = float(angles_sorted[0] + 2 * np.pi)
-
-    orbit = utils.OrbitInfo(
-        centroid=centroid,
-        normal=up_axis,
-        radius=radius,
-        u=u_basis,
-        v=v_basis,
-        angles=angles_sorted,
-        gap_start=gap_start,
-        gap_end=gap_end,
-        gap_size=float(all_gaps[gap_idx]),
-    )
-    return orbit, float(np.median(height_offsets))
-
-
 def observed_spacing_statistics_deg(sorted_angles_rad: np.ndarray) -> tuple[float, float]:
     if len(sorted_angles_rad) <= 1:
         return 0.0, 0.0
@@ -497,8 +373,8 @@ def choose_reference_images(
 
     scored = []
     for idx, path in enumerate(image_paths):
-        angle = camera_angle_on_orbit(np.asarray(scene["extrinsic"][idx], dtype=np.float32), orbit)
-        scored.append((angular_distance_rad(angle, target_angle_rad), idx, path))
+        angle = utils.angular_position_rad(np.asarray(scene["extrinsic"][idx], dtype=np.float32), orbit)
+        scored.append((utils.angular_distance_rad(angle, target_angle_rad), idx, path))
     scored.sort(key=lambda item: (item[0], item[1]))
     return [path for _, _, path in scored[:max_reference_images]]
 
@@ -507,64 +383,6 @@ def scene_summary_payload(scene: dict[str, Any], image_paths: list[Path]) -> dic
     payload = utils.describe_scene(scene)
     payload["image_paths"] = [str(p) for p in image_paths]
     return payload
-
-
-def camera_baseline_scale(extrinsics: np.ndarray, idx_a: int = 0, idx_b: int = 1) -> float:
-    c_a = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_a], dtype=np.float32))
-    c_b = utils.camera_center_from_extrinsic(np.asarray(extrinsics[idx_b], dtype=np.float32))
-    return float(np.linalg.norm(c_b - c_a))
-
-
-def relative_camera_pose_from_reference(
-    reference_extrinsic: np.ndarray,
-    target_extrinsic: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    ref = np.asarray(reference_extrinsic, dtype=np.float32)
-    tgt = np.asarray(target_extrinsic, dtype=np.float32)
-    c_ref = utils.camera_center_from_extrinsic(ref)
-    c_tgt = utils.camera_center_from_extrinsic(tgt)
-    delta_world = c_tgt - c_ref
-    delta_in_ref_camera = ref[:, :3] @ delta_world
-    relative_rotation = tgt[:, :3] @ ref[:, :3].T
-    return relative_rotation.astype(np.float32), delta_in_ref_camera.astype(np.float32)
-
-
-def rotation_error_deg(rotation_a: np.ndarray, rotation_b: np.ndarray) -> float:
-    delta = np.asarray(rotation_a, dtype=np.float64) @ np.asarray(rotation_b, dtype=np.float64).T
-    trace_value = float(np.trace(delta))
-    cos_angle = np.clip((trace_value - 1.0) / 2.0, -1.0, 1.0)
-    return float(np.degrees(np.arccos(cos_angle)))
-
-
-def vector_angle_deg(vector_a: np.ndarray, vector_b: np.ndarray, eps: float = 1e-8) -> float:
-    a = np.asarray(vector_a, dtype=np.float64)
-    b = np.asarray(vector_b, dtype=np.float64)
-    norm_a = float(np.linalg.norm(a))
-    norm_b = float(np.linalg.norm(b))
-    if norm_a < eps or norm_b < eps:
-        return 0.0
-    cos_angle = np.clip(float(np.dot(a, b)) / (norm_a * norm_b), -1.0, 1.0)
-    return float(np.degrees(np.arccos(cos_angle)))
-
-
-def relative_pose_comparison(
-    target_rotation: np.ndarray,
-    target_translation: np.ndarray,
-    predicted_rotation: np.ndarray,
-    predicted_translation: np.ndarray,
-) -> dict[str, float]:
-    target_translation = np.asarray(target_translation, dtype=np.float32)
-    predicted_translation = np.asarray(predicted_translation, dtype=np.float32)
-    target_norm = float(np.linalg.norm(target_translation))
-    predicted_norm = float(np.linalg.norm(predicted_translation))
-    return {
-        "rotation_error_deg": rotation_error_deg(predicted_rotation, target_rotation),
-        "translation_l2_normalized": float(np.linalg.norm(predicted_translation - target_translation)),
-        "translation_direction_error_deg": vector_angle_deg(predicted_translation, target_translation),
-        "target_translation_norm": target_norm,
-        "predicted_translation_norm": predicted_norm,
-        "translation_norm_ratio_pred_over_target": float(predicted_norm / target_norm) if target_norm > 1e-8 else 0.0,
-    }
 
 
 def build_iteration_point_cloud(
@@ -631,7 +449,7 @@ def plan_next_orbit_view(
 
     centroid = pts_render.mean(axis=0).astype(np.float32)
     extrinsics = [np.asarray(extr, dtype=np.float32) for extr in scene["extrinsic"]]
-    orbit, camera_height_offset = estimate_horizontal_orbit(extrinsics, centroid)
+    orbit, camera_height_offset = utils.estimate_horizontal_orbit(extrinsics, centroid, point_cloud=None)
     raw_angles = [camera_angle_on_orbit(extr, orbit) for extr in extrinsics]
 
     target_gap_deg = 360.0 / float(loop_cfg.max_total_views)
@@ -696,11 +514,11 @@ def evaluate_augmented_scene(
 ) -> dict[str, Any]:
     base_extrinsics = np.asarray(scene_before["extrinsic"], dtype=np.float32)
     augmented_extrinsics = np.asarray(scene_after["extrinsic"], dtype=np.float32)
-    base_scale = camera_baseline_scale(base_extrinsics, idx_a=0, idx_b=1)
-    augmented_scale = camera_baseline_scale(augmented_extrinsics, idx_a=0, idx_b=1)
+    base_scale = utils.camera_baseline_scale(base_extrinsics, idx_a=0, idx_b=1)
+    augmented_scale = utils.camera_baseline_scale(augmented_extrinsics, idx_a=0, idx_b=1)
 
-    target_rotation, target_translation = relative_camera_pose_from_reference(base_extrinsics[0], target_extrinsic)
-    predicted_rotation, predicted_translation = relative_camera_pose_from_reference(
+    target_rotation, target_translation = utils.relative_camera_pose_from_reference(base_extrinsics[0], target_extrinsic)
+    predicted_rotation, predicted_translation = utils.relative_camera_pose_from_reference(
         augmented_extrinsics[0],
         augmented_extrinsics[-1],
     )
@@ -714,7 +532,7 @@ def evaluate_augmented_scene(
         background_filter=background_filter,
     )
     centroid_after = pts_after.mean(axis=0).astype(np.float32)
-    orbit_after, _ = estimate_horizontal_orbit(list(augmented_extrinsics), centroid_after)
+    orbit_after, _ = utils.estimate_horizontal_orbit(list(augmented_extrinsics), centroid_after, point_cloud=None)
     predicted_angle = camera_angle_on_orbit(augmented_extrinsics[-1], orbit_after)
     existing_angles = [
         camera_angle_on_orbit(np.asarray(extr, dtype=np.float32), orbit_after)
@@ -732,7 +550,7 @@ def evaluate_augmented_scene(
         "gap_improvement_deg": gap_improvement_deg,
         "predicted_angle_deg": float(np.degrees(predicted_angle)),
         "min_angle_to_existing_deg": min_angle_to_existing_deg,
-        "target_pose_error": relative_pose_comparison(
+        "target_pose_error": utils.relative_pose_comparison(
             target_rotation,
             target_translation_normalized,
             predicted_rotation,
@@ -866,9 +684,12 @@ def generate_iteration(
         novel_render,
         dilate_px=pipeline_cfg.mask_dilate_px,
         close_px=pipeline_cfg.mask_close_px,
+        min_area_px=pipeline_cfg.mask_min_area_px,
         exterior_only=pipeline_cfg.mask_exterior_only,
+        interior_only=pipeline_cfg.mask_interior_only,
         support_close_px=pipeline_cfg.mask_support_close_px,
         support_dilate_px=pipeline_cfg.mask_support_dilate_px,
+        gap_break_px=pipeline_cfg.mask_gap_break_px,
         fill_mask_rgb=pipeline_cfg.mask_fill_rgb,
     )
     novel_input_path = utils.save_pil(novel_input, target_dir / "pos2_flux_base.png")

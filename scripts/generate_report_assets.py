@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT_DIR = ROOT / "report"
 FIGURES_DIR = REPORT_DIR / "figures"
 DATA_DIR = REPORT_DIR / "data"
-E2E_DIR = ROOT / "outputs" / "tests" / "e2e"
-EVAL_DIR = ROOT / "outputs" / "tests" / "eval"
-ITER_DIR = ROOT / "outputs" / "tests" / "iterative_loop_plant"
+E2E_DIR = ROOT / "outputs" / "e2e"
+EVAL_DIR = ROOT / "outputs" / "eval"
+ITER_DIR = ROOT / "outputs" / "iterative" / "plant"
 
 
 @dataclass
@@ -59,9 +59,9 @@ def detect_iterative_root(preferred: str | None = None) -> Path:
         return preferred_path
 
     candidates = [
-        ROOT / "outputs" / "tests" / "iterative_loop_plant",
-        ROOT / "outputs" / "tests" / "iterative_loop",
-        ROOT / "outputs" / "tests" / "iterative_loop_horizontal_probe",
+        ROOT / "outputs" / "iterative" / "plant",
+        ROOT / "outputs" / "iterative" / "horizontal_probe",
+        ROOT / "outputs" / "iterative" / "Colosseum",
     ]
     valid = []
     for candidate in candidates:
@@ -70,7 +70,7 @@ def detect_iterative_root(preferred: str | None = None) -> Path:
             payload = json.loads(manifest.read_text())
             valid.append((len(payload.get("final_image_paths", [])), candidate))
     if not valid:
-        raise FileNotFoundError("No iterative loop manifest found under outputs/tests.")
+        raise FileNotFoundError("No iterative loop manifest found under outputs/iterative.")
     valid.sort(key=lambda item: (item[0], item[1].name), reverse=True)
     return valid[0][1]
 
@@ -81,8 +81,8 @@ def resolve_iterative_artifact(path_str: str, iter_root: Path) -> Path:
         return direct
     rel = Path(path_str)
     for marker in (
-        Path("outputs") / "tests" / "iterative_loop_plant",
-        Path("outputs") / "tests" / "iterative_loop",
+        Path("outputs") / "iterative" / "plant",
+        Path("outputs") / "iterative",
     ):
         parts = rel.parts
         marker_parts = marker.parts
@@ -154,13 +154,19 @@ def build_prefix_sets(manifest: dict[str, Any], iter_root: Path) -> list[tuple[i
     return prefix_sets
 
 
-def create_pipeline_figures(iter_root: Path) -> dict[str, str]:
+def create_pipeline_figures(
+    iter_root: Path,
+    e2e_dir: Path | None = None,
+    eval_dir: Path | None = None,
+) -> dict[str, str]:
+    e2e_dir = e2e_dir or E2E_DIR
+    eval_dir = eval_dir or EVAL_DIR
     figure_paths: dict[str, str] = {}
     originals = [ROOT / "data" / f"image_0{i}.png" for i in range(1, 5)]
 
     figure_paths["pipeline_inputs_and_reprojection"] = str(
         save_grid(
-            [*originals, E2E_DIR / "02_projection_from_vggt_camera.png"],
+            [*originals, e2e_dir / "02_projection_from_vggt_camera.png"],
             ["Input 1", "Input 2", "Input 3", "Input 4", "VGGT render"],
             "pipeline_inputs_and_reprojection.png",
             figsize=(20, 4),
@@ -168,7 +174,7 @@ def create_pipeline_figures(iter_root: Path) -> dict[str, str]:
     )
     figure_paths["pipeline_camera_move"] = str(
         save_grid(
-            [E2E_DIR / "02_projection_from_vggt_camera.png", E2E_DIR / "03_novel_view_projection.png"],
+            [e2e_dir / "02_projection_from_vggt_camera.png", e2e_dir / "03_novel_view_projection.png"],
             ["Render at original camera", "Target sparse novel render"],
             "pipeline_camera_move.png",
             figsize=(12, 4),
@@ -176,7 +182,7 @@ def create_pipeline_figures(iter_root: Path) -> dict[str, str]:
     )
     figure_paths["pipeline_masking"] = str(
         save_grid(
-            [E2E_DIR / "03_novel_view_projection.png", E2E_DIR / "04_hole_mask.png", E2E_DIR / "04_hole_mask_overlay.png"],
+            [e2e_dir / "03_novel_view_projection.png", e2e_dir / "04_hole_mask.png", e2e_dir / "04_hole_mask_overlay.png"],
             ["Sparse novel render", "Hole mask", "Mask overlay"],
             "pipeline_masking.png",
             figsize=(15, 4),
@@ -184,21 +190,21 @@ def create_pipeline_figures(iter_root: Path) -> dict[str, str]:
     )
     figure_paths["pipeline_flux_completion"] = str(
         save_grid(
-            [E2E_DIR / "04_novel_view_input.png", E2E_DIR / "05_inpaint_raw_generated.png"],
+            [e2e_dir / "04_novel_view_input.png", e2e_dir / "05_inpaint_raw_generated.png"],
             ["Masked FLUX input", "FLUX raw generation"],
             "pipeline_flux_completion.png",
             figsize=(12, 4),
         )
     )
     figure_paths["pipeline_reconstruction_comparison"] = str(
-        copy_asset(E2E_DIR / "07_point_cloud_comparison.png", "pipeline_reconstruction_comparison.png")
+        copy_asset(e2e_dir / "07_point_cloud_comparison.png", "pipeline_reconstruction_comparison.png")
     )
     figure_paths["pipeline_same_pose_rerender"] = str(
         save_grid(
             [
-                E2E_DIR / "03_novel_view_projection.png",
-                E2E_DIR / "05_inpaint_raw_generated.png",
-                EVAL_DIR / "novel_view_regeneration" / "01_augmented_same_pose_rerender.png",
+                e2e_dir / "03_novel_view_projection.png",
+                e2e_dir / "05_inpaint_raw_generated.png",
+                eval_dir / "novel_view_regeneration" / "01_augmented_same_pose_rerender.png",
             ],
             ["Baseline sparse render", "Generated target", "Augmented rerender"],
             "pipeline_same_pose_rerender.png",
@@ -371,7 +377,19 @@ def parse_args() -> argparse.Namespace:
         "--iterative-root",
         type=str,
         default=None,
-        help="Optional path relative to the repo root for the iterative results folder (for example outputs/tests/iterative_loop_plant).",
+        help="Optional path relative to the repo root for the iterative results folder (e.g. outputs/iterative/plant).",
+    )
+    parser.add_argument(
+        "--e2e-dir",
+        type=str,
+        default=None,
+        help="Optional path relative to the repo root for the e2e pipeline outputs (default: outputs/e2e).",
+    )
+    parser.add_argument(
+        "--eval-dir",
+        type=str,
+        default=None,
+        help="Optional path relative to the repo root for the evaluation outputs (default: outputs/eval).",
     )
     return parser.parse_args()
 
@@ -380,12 +398,15 @@ def main() -> None:
     args = parse_args()
     ensure_dirs()
 
-    evaluation_summary = json.loads(require(EVAL_DIR / "evaluation_summary.json").read_text())
+    e2e_dir = ROOT / (args.e2e_dir or "outputs/e2e")
+    eval_dir = ROOT / (args.eval_dir or "outputs/eval")
+
+    evaluation_summary = json.loads(require(eval_dir / "evaluation_summary.json").read_text())
     iterative_root = detect_iterative_root(args.iterative_root)
     iterative_manifest = json.loads(require(iterative_root / "manifest.json").read_text())
-    require(E2E_DIR / "05_inpaint_metadata.json")
+    require(e2e_dir / "05_inpaint_metadata.json")
 
-    figure_paths = create_pipeline_figures(iterative_root)
+    figure_paths = create_pipeline_figures(iterative_root, e2e_dir=e2e_dir, eval_dir=eval_dir)
     iterative_metrics = collect_iterative_metrics(iterative_manifest, iterative_root)
     figure_paths["results_gap_curve"] = plot_gap_series(
         iterative_metrics["gap_series"],

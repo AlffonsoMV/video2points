@@ -4,7 +4,7 @@ Iterative orbit-completion pipeline.
 
 Takes a video of an object (partial orbit), reconstructs with VGGT,
 then iteratively extends coverage by generating novel views:
-  render point cloud → SDXL inpaint holes → FLUX sharpen → re-run VGGT → repeat.
+  render point cloud → upscale to original resolution → FLUX quality enhance → inpaint holes → re-run VGGT → repeat.
 
 Each iteration adds up to two views (left and right into the gap) before
 re-running VGGT, halving the number of VGGT runs versus single-view steps.
@@ -34,127 +34,19 @@ if str(_PROJECT_ROOT) not in sys.path:
 sys.stdout.reconfigure(line_buffering=True)
 
 import utils
+from pipeline.output_layout import (
+    dir_final,
+    dir_frames,
+    dir_initial,
+    dir_iterations,
+    dir_view,
+    STRUCTURE_TXT,
+)
 
 
 STEP_DEG = 20.0
 GAP_THRESHOLD_DEG = 25.0
 MAX_ITERATIONS_DEFAULT = 45
-
-
-def merged_point_cloud(
-    scene: dict,
-    view_indices: list[int],
-    conf_percentile: float,
-    max_points: int | None,
-    seed: int = 0,
-) -> tuple[np.ndarray, np.ndarray]:
-    pts_all, cols_all = [], []
-    for idx in view_indices:
-        pts, cols, _ = utils.build_point_cloud_from_scene(
-            scene, view_idx=idx, conf_percentile=conf_percentile, max_points=None,
-        )
-        if len(pts):
-            pts_all.append(pts)
-            cols_all.append(cols)
-    if not pts_all:
-        return np.empty((0, 3), dtype=np.float32), np.empty((0, 3), dtype=np.float32)
-    pts = np.concatenate(pts_all, axis=0)
-    cols = np.concatenate(cols_all, axis=0)
-    if max_points is not None and len(pts) > max_points:
-        rng = np.random.default_rng(seed)
-        idx = rng.choice(len(pts), size=max_points, replace=False)
-        pts, cols = pts[idx], cols[idx]
-    return pts.astype(np.float32), cols.astype(np.float32)
-
-
-def _camera_at_angle(
-    orbit: utils.OrbitInfo,
-    target_angle: float,
-    cam_height_offset: float,
-    ref_intr: np.ndarray,
-    extrinsics: list[np.ndarray],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Build novel extrinsic/intrinsic at *target_angle* on the orbit (same logic as main loop)."""
-    pos = (
-        orbit.centroid
-        + cam_height_offset * orbit.normal
-        + orbit.radius * (np.cos(target_angle) * orbit.u + np.sin(target_angle) * orbit.v)
-    )
-    ref_angles = []
-    for ext in extrinsics:
-        ext = np.asarray(ext, dtype=np.float32)
-        center = utils.camera_center_from_extrinsic(ext)
-        horiz = (center - orbit.centroid) - np.dot(center - orbit.centroid, orbit.normal) * orbit.normal
-        a = float(np.arctan2(np.dot(horiz, orbit.v), np.dot(horiz, orbit.u)))
-        ref_angles.append(a)
-    ref_angles_arr = np.array(ref_angles)
-    diffs = np.abs(np.arctan2(
-        np.sin(ref_angles_arr - target_angle),
-        np.cos(ref_angles_arr - target_angle),
-    ))
-    closest_idx = int(np.argmin(diffs))
-    closest_ext = np.asarray(extrinsics[closest_idx], dtype=np.float32)
-    R_wfc_ref = closest_ext[:, :3].T
-    delta = float(target_angle - ref_angles[closest_idx])
-    R_delta = utils._rotation_matrix_around_axis(orbit.normal, delta)
-    R_wfc_new = (R_delta @ R_wfc_ref).astype(np.float32)
-    novel_extr = utils.extrinsic_from_camera_pose(R_wfc_new, pos.astype(np.float32))
-    return novel_extr, ref_intr.copy()
-
-
-def _closest_original_frame_by_angle(
-    orbit: utils.OrbitInfo,
-    extrinsics: list[np.ndarray],
-    frame_paths: list[Path],
-    target_angle: float,
-) -> Path | None:
-    """Return the original frame whose camera angle is closest to target_angle. Single ref minimizes geometry conflict."""
-    if not frame_paths or len(extrinsics) < len(frame_paths):
-        return None
-    ref_angles = []
-    for i in range(len(frame_paths)):
-        ext = np.asarray(extrinsics[i], dtype=np.float32)
-        center = utils.camera_center_from_extrinsic(ext)
-        horiz = (center - orbit.centroid) - np.dot(center - orbit.centroid, orbit.normal) * orbit.normal
-        a = float(np.arctan2(np.dot(horiz, orbit.v), np.dot(horiz, orbit.u)))
-        ref_angles.append(a)
-    ref_angles_arr = np.array(ref_angles)
-    diffs = np.abs(np.arctan2(np.sin(ref_angles_arr - target_angle), np.cos(ref_angles_arr - target_angle)))
-    closest_idx = int(np.argmin(diffs))
-    return frame_paths[closest_idx]
-
-
-def pick_next_angles_bilateral(
-    orbit: utils.OrbitInfo,
-    step_deg: float,
-) -> list[float]:
-    """
-    Pick up to two target angles: one step from gap start (left) and one from gap end (right).
-    When the gap is large enough, both views are added in one iteration before re-running VGGT.
-    When the gap is small (< 2*step + margin), only one view at the midpoint is added.
-    Returns empty list when the gap is too small for any step.
-    """
-    gap_deg = np.degrees(orbit.gap_size)
-    margin_deg = 1.0
-    if gap_deg < margin_deg:
-        return []
-    step_rad = np.radians(step_deg)
-    margin_rad = np.radians(margin_deg)
-
-    # Can we fit both left and right views with step each and margin between them?
-    step_actual_deg = min(step_deg, (gap_deg - margin_deg) / 2.0)
-    if step_actual_deg < 0.5:
-        return []
-    step_actual_rad = np.radians(step_actual_deg)
-
-    angle_left = float(orbit.gap_start + step_actual_rad)
-    angle_right = float(orbit.gap_end - step_actual_rad)
-
-    if angle_left < angle_right - margin_rad:
-        return [angle_left, angle_right]
-    # Gap too small for both: add single view at midpoint
-    mid = float((orbit.gap_start + orbit.gap_end) / 2.0)
-    return [mid]
 
 
 def run_orbit_pipeline(
@@ -176,7 +68,7 @@ def run_orbit_pipeline(
     print(f"Processing: {video_path.name}")
     print(f"{'=' * 60}")
     print(f"\n[1] Extracting {cfg.n_frames_per_video} frames ...")
-    frame_dir = utils.ensure_dir(out_dir / "frames")
+    frame_dir = utils.ensure_dir(dir_frames(out_dir))
     frame_paths = utils.extract_n_frames_from_video(
         video_path, n_frames=cfg.n_frames_per_video, output_dir=frame_dir,
     )
@@ -186,6 +78,7 @@ def run_orbit_pipeline(
     print("  (Renders are pixely because we project a point cloud; more frames + smaller steps = denser over time.)")
 
     image_paths: list[Path] = list(frame_paths)
+    original_frame_size = Image.open(frame_paths[0]).size  # (w, h) at native resolution
 
     # -- 2. Initial VGGT reconstruction -----------------------------------
     print(f"\n[2] Running initial VGGT reconstruction ({len(image_paths)} views) ...")
@@ -198,25 +91,31 @@ def run_orbit_pipeline(
 
     n_views = len(image_paths)
     view_indices = list(range(n_views))
-    pts, cols = merged_point_cloud(
-        scene, view_indices, cfg.vggt_conf_percentile, cfg.max_points_render, cfg.seed,
+    pts, cols = utils.merge_scene_point_cloud(
+        scene, view_indices=view_indices,
+        conf_percentile=cfg.vggt_conf_percentile, max_points=cfg.max_points_render, rng_seed=cfg.seed,
     )
     print(f"  Merged point cloud: {len(pts):,} points")
 
     fig, _ = utils.plot_point_cloud_3d(
-        *merged_point_cloud(scene, view_indices, cfg.vggt_conf_percentile, cfg.max_points_plot, cfg.seed),
+        *utils.merge_scene_point_cloud(
+            scene, view_indices=view_indices,
+            conf_percentile=cfg.vggt_conf_percentile, max_points=cfg.max_points_plot, rng_seed=cfg.seed,
+        ),
         title=f"Initial reconstruction — {n_views} views",
         point_size=0.25,
     )
-    utils.save_matplotlib_figure(fig, out_dir / "initial_point_cloud.png")
+    utils.ensure_dir(dir_initial(out_dir))
+    utils.save_matplotlib_figure(fig, dir_initial(out_dir) / "point_cloud.png")
 
     if len(pts) == 0:
         print("  ERROR: empty point cloud — cannot continue.")
         return
 
     image_hw = tuple(int(x) for x in scene["image_hw"])
-    gen_dir = utils.ensure_dir(out_dir / "generated")
+    utils.ensure_dir(dir_iterations(out_dir))
     generated_count = 0
+    manifest_iterations: list[dict] = []
 
     # -- 3. Iterative orbit-filling loop ----------------------------------
     for iteration in range(max_iterations):
@@ -241,7 +140,7 @@ def run_orbit_pipeline(
 
         # 3b. Pick next target angles (up to 2: left + right into the gap)
         ref_intr = np.asarray(scene["intrinsic"][0], dtype=np.float32)
-        target_angles = pick_next_angles_bilateral(orbit, step_deg)
+        target_angles = utils.pick_next_angles_bilateral(orbit, step_deg)
         if not target_angles:
             print(f"  Gap ({gap_deg:.1f}°) too small for another step — done.")
             break
@@ -251,9 +150,13 @@ def run_orbit_pipeline(
             f"{labels[i]} {np.degrees(a):.1f}°" for i, a in enumerate(target_angles)
         ))
 
-        for target_angle in target_angles:
+        iter_num = iteration + 1
+        iter_views: list[dict] = []
+        for view_idx, target_angle in enumerate(target_angles):
+            view_dir = utils.ensure_dir(dir_view(out_dir, iter_num, view_idx))
+
             # 3c. Camera at chosen angle
-            novel_extr, novel_intr = _camera_at_angle(
+            novel_extr, novel_intr = utils.camera_at_angle(
                 orbit, target_angle, cam_height_offset, ref_intr, extrinsics,
             )
 
@@ -261,7 +164,7 @@ def run_orbit_pipeline(
             render = utils.render_projected_point_cloud(
                 pts, cols, novel_extr, novel_intr, image_hw, cfg.render_point_radius,
             )
-            utils.save_pil(render.image, gen_dir / f"render_{generated_count:02d}.png")
+            utils.save_pil(render.image, view_dir / "01_render.png")
             print(f"  Render {generated_count}: projected={render.projected_count:,}, valid_ratio={render.valid_mask.mean():.4f}")
 
             novel_input, hole_mask, hole_overlay = utils.prepare_novel_view_inpainting_inputs(
@@ -270,20 +173,51 @@ def run_orbit_pipeline(
                 close_px=cfg.mask_close_px,
                 min_area_px=cfg.mask_min_area_px,
                 interior_only=True,
+                gap_break_px=cfg.mask_gap_break_px,
             )
-            utils.save_pil(hole_overlay, gen_dir / f"hole_overlay_{generated_count:02d}.png")
+            utils.save_pil(hole_mask, view_dir / "02_hole_mask.png")
+            utils.save_pil(hole_overlay, view_dir / "03_hole_overlay.png")
             hole_ratio = float((np.asarray(hole_mask) > 0).mean())
             print(f"  Hole ratio: {hole_ratio:.4f}")
 
-            # 3e. Inpaint holes
+            # 3e. Resize to original frame resolution
+            current_w, current_h = novel_input.size
+            orig_w, orig_h = original_frame_size
+            if (current_w, current_h) != (orig_w, orig_h):
+                novel_input = novel_input.resize(original_frame_size, Image.Resampling.LANCZOS)
+                hole_mask = hole_mask.resize(original_frame_size, Image.Resampling.NEAREST)
+                utils.save_pil(novel_input, view_dir / "04_upscaled.png")
+                print(f"  Upscaled {current_w}x{current_h} → {orig_w}x{orig_h}")
+
+            # 3f. FLUX quality enhancement on rendered content (before inpainting)
+            if flux_sharpen:
+                utils.clear_loaded_model_caches(clear_vggt=True, clear_inpaint=False)
+                t_flux = time.time()
+                flux_prompt = (
+                    "Enhance this image to photorealistic quality with sharp, crisp details "
+                    "and natural textures. Preserve the exact geometry, composition, viewpoint, "
+                    "and object identity. Do not add or remove objects."
+                )
+                novel_input = utils.enhance_quality_with_flux2_klein(
+                    novel_input,
+                    prompt=flux_prompt,
+                    reference_images=frame_paths[:2],
+                    device=device,
+                    num_inference_steps=8,
+                    guidance_scale=1.0,
+                    seed=cfg.seed + generated_count,
+                )
+                utils.save_pil(novel_input, view_dir / "05_flux_quality.png")
+                print(f"  FLUX quality enhanced in {time.time() - t_flux:.1f}s")
+                utils.clear_loaded_model_caches(clear_vggt=False, clear_inpaint=True)
+
+            # 3g. Inpaint holes
             t_inpaint = time.time()
             if skip_sdxl:
-                # OpenCV fallback: fast interpolation, no hallucination
                 final_image = utils.opencv_inpaint_fallback(novel_input, hole_mask, radius=5)
-                utils.save_pil(final_image, gen_dir / f"inpaint_cv_{generated_count:02d}.png")
+                utils.save_pil(final_image, view_dir / "06_inpainted.png")
                 print(f"  OpenCV inpainted in {time.time() - t_inpaint:.1f}s")
             else:
-                # SDXL inpainting: fill holes with diffusion model
                 utils.clear_loaded_model_caches(clear_vggt=True, clear_inpaint=False)
                 sdxl_result = utils.inpaint_with_diffusion(
                     image=novel_input,
@@ -292,45 +226,34 @@ def run_orbit_pipeline(
                     negative_prompt=cfg.inpaint_negative_prompt,
                     model_id=cfg.inpaint_model_id,
                     device=device,
-                    num_inference_steps=max(cfg.inpaint_steps, 20),  # SDXL needs 15–30 steps
-                    guidance_scale=8.0,  # official SDXL inpainting recommendation
-                    strength=0.99,  # must be below 1.0; 0.95 preserved white → white output
-                    padding_mask_crop=None,  # avoid crop issues with small hole masks
+                    num_inference_steps=max(cfg.inpaint_steps, 20),
+                    guidance_scale=8.0,
+                    strength=0.99,
+                    padding_mask_crop=None,
                     seed=cfg.seed + generated_count,
                     allow_fallback_to_opencv=True,
                 )
                 final_image = sdxl_result.composited
-                utils.save_pil(final_image, gen_dir / f"sdxl_{generated_count:02d}.png")
+                utils.save_pil(final_image, view_dir / "06_inpainted.png")
                 print(f"  SDXL inpainted (backend={sdxl_result.backend}) in {time.time() - t_inpaint:.1f}s")
 
-            # 3f. FLUX refinement: sharpen inpainted regions into photorealistic texture
-            if flux_sharpen:
-                utils.clear_loaded_model_caches(clear_vggt=True, clear_inpaint=False)
-                t_flux = time.time()
-                flux_prompt = (
-                    "Sharpen and enhance this image to be photorealistic. "
-                    "The image has blurry or smeared regions — make them crisp and detailed. "
-                    "Match the colors, textures, and lighting of the sharp surrounding areas. "
-                    "Preserve the exact composition, geometry, and viewpoint. Do not add or remove objects."
-                )
-                final_image = utils.refine_image_with_flux2_klein(
-                    final_image,
-                    prompt=flux_prompt,
-                    mask=hole_mask,
-                    device=device,
-                    num_inference_steps=8,
-                    guidance_scale=1.0,
-                    seed=cfg.seed + generated_count,
-                )
-                utils.save_pil(final_image, gen_dir / f"flux_{generated_count:02d}.png")
-                print(f"  FLUX refined in {time.time() - t_flux:.1f}s")
-                utils.clear_loaded_model_caches(clear_vggt=False, clear_inpaint=True)
-            inpainted_path = gen_dir / f"inpainted_{generated_count:02d}.png"
-            utils.save_pil(final_image, inpainted_path)
-            image_paths.append(inpainted_path)
+            final_path = view_dir / "final.png"
+            utils.save_pil(final_image, final_path)
+            image_paths.append(final_path)
+            iter_views.append({
+                "view_idx": view_idx,
+                "final_path": str(final_path.resolve()),
+                "angle_deg": float(np.degrees(target_angle)),
+            })
             generated_count += 1
 
-        # 3f. Re-run VGGT with all images so far
+        manifest_iterations.append({
+            "iteration": iter_num,
+            "gap_before_deg": gap_deg,
+            "views": iter_views,
+        })
+
+        # 3h. Re-run VGGT with all images so far
         print(f"  Re-running VGGT with {len(image_paths)} views ...")
         utils.clear_loaded_model_caches(clear_vggt=True, clear_inpaint=True)
         model = utils.load_vggt_model(cfg.vggt_model_id, device=device)
@@ -340,8 +263,9 @@ def run_orbit_pipeline(
         del model
 
         all_indices = list(range(len(image_paths)))
-        pts, cols = merged_point_cloud(
-            scene, all_indices, cfg.vggt_conf_percentile, cfg.max_points_render, cfg.seed,
+        pts, cols = utils.merge_scene_point_cloud(
+            scene, view_indices=all_indices,
+            conf_percentile=cfg.vggt_conf_percentile, max_points=cfg.max_points_render, rng_seed=cfg.seed,
         )
         print(f"  Updated point cloud: {len(pts):,} points")
         print(f"  Iteration time: {time.time() - t_iter:.1f}s")
@@ -349,14 +273,30 @@ def run_orbit_pipeline(
     # -- 4. Final point cloud visualization --------------------------------
     print(f"\n[Final] Saving final reconstruction ({len(image_paths)} views) ...")
     fig_final, _ = utils.plot_point_cloud_3d(
-        *merged_point_cloud(
-            scene, list(range(len(image_paths))),
-            cfg.vggt_conf_percentile, cfg.max_points_plot, cfg.seed,
+        *utils.merge_scene_point_cloud(
+            scene, view_indices=list(range(len(image_paths))),
+            conf_percentile=cfg.vggt_conf_percentile, max_points=cfg.max_points_plot, rng_seed=cfg.seed,
         ),
         title=f"Final reconstruction — {len(image_paths)} views",
         point_size=0.25,
     )
-    utils.save_matplotlib_figure(fig_final, out_dir / "final_point_cloud.png")
+    utils.ensure_dir(dir_final(out_dir))
+    utils.save_matplotlib_figure(fig_final, dir_final(out_dir) / "point_cloud.png")
+
+    # -- 5. Manifest and structure doc -------------------------------------
+    manifest = {
+        "pipeline": "run_with_videos",
+        "video_path": str(video_path.resolve()),
+        "output_root": str(out_dir.resolve()),
+        "initial_frames": [str(p.resolve()) for p in frame_paths],
+        "final_image_paths": [str(p.resolve()) for p in image_paths],
+        "iterations": manifest_iterations,
+        "total_views": len(image_paths),
+        "generated_views": generated_count,
+        "total_time_sec": round(time.time() - t_total, 1),
+    }
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
+    (out_dir / "STRUCTURE.txt").write_text(STRUCTURE_TXT)
 
     print(f"\nDone.")
     print(f"  Original views:  {len(frame_paths)}")
@@ -383,7 +323,7 @@ def main() -> None:
     parser.add_argument("--prompt", type=str, default=None,
                         help="Override inpainting prompt (e.g. for Colosseum).")
     parser.add_argument("--no-flux-refine", action="store_true",
-                        help="Disable FLUX sharpening pass after inpainting.")
+                        help="Disable FLUX quality enhancement pass after upscaling.")
     parser.add_argument("--skip-sdxl", action="store_true",
                         help="Use OpenCV interpolation instead of SDXL for hole filling (faster, less realistic).")
     args = parser.parse_args()
