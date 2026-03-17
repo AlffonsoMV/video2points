@@ -1,0 +1,122 @@
+{
+  "view_00": {
+    "render_vs_closest_original": {
+      "psnr": 5.604680252449814,
+      "ssim": 0.096678726375103,
+      "lpips": 0.7123269438743591,
+      "reference_size": [
+        640,
+        360
+      ],
+      "candidate_original_size": [
+        518,
+        294
+      ],
+      "candidate_resized_to_reference": true,
+      "closest_frame": "Colosseum_frame_001.png"
+    },
+    "final_vs_closest_original": {
+      "psnr": 5.883445760888844,
+      "ssim": 0.09267353266477585,
+      "lpips": 0.6997554302215576,
+      "reference_size": [
+        640,
+        360
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": true,
+      "closest_frame": "Colosseum_frame_001.png"
+    },
+    "render_vs_final": {
+      "psnr": 14.302312794888133,
+      "ssim": 0.7060834765434265,
+      "lpips": 0.23620907962322235,
+      "reference_size": [
+        518,
+        294
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": true
+    },
+    "flux_quality_vs_final": {
+      "psnr": 16.10302580036086,
+      "ssim": 0.8730926513671875,
+      "lpips": 0.11921710520982742,
+      "reference_size": [
+        1820,
+        1024
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": false
+    }
+  },
+  "view_01": {
+    "render_vs_closest_original": {
+      "psnr": 5.8707808440274745,
+      "ssim": 0.10342773050069809,
+      "lpips": 0.7192019820213318,
+      "reference_size": [
+        640,
+        360
+      ],
+      "candidate_original_size": [
+        518,
+        294
+      ],
+      "candidate_resized_to_reference": true,
+      "closest_frame": "Colosseum_frame_001.png"
+    },
+    "final_vs_closest_original": {
+      "psnr": 6.444353936469621,
+      "ssim": 0.09041925519704819,
+      "lpips": 0.6969950199127197,
+      "reference_size": [
+        640,
+        360
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": true,
+      "closest_frame": "Colosseum_frame_001.png"
+    },
+    "render_vs_final": {
+      "psnr": 12.710864303283408,
+      "ssim": 0.6863210201263428,
+      "lpips": 0.2554340958595276,
+      "reference_size": [
+        518,
+        294
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": true
+    },
+    "flux_quality_vs_final": {
+      "psnr": 13.624072680992683,
+      "ssim": 0.8525956273078918,
+      "lpips": 0.1359691321849823,
+      "reference_size": [
+        1820,
+        1024
+      ],
+      "candidate_original_size": [
+        1820,
+        1024
+      ],
+      "candidate_resized_to_reference": false
+    }
+  }
+}
