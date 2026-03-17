@@ -1,0 +1,57 @@
+{
+  "device": "mps",
+  "image_paths": [
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_000.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_001.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_002.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_003.png"
+  ],
+  "image_hw": [
+    294,
+    518
+  ],
+  "preprocessed_shape": [
+    4,
+    3,
+    294,
+    518
+  ],
+  "depth_shape": [
+    4,
+    294,
+    518,
+    1
+  ],
+  "depth_conf_shape": [
+    4,
+    294,
+    518
+  ],
+  "world_points_shape": [
+    4,
+    294,
+    518,
+    3
+  ],
+  "world_points_conf_shape": [
+    4,
+    294,
+    518
+  ],
+  "world_points_from_depth_shape": [
+    4,
+    294,
+    518,
+    3
+  ],
+  "extrinsic_shape": [
+    4,
+    3,
+    4
+  ],
+  "intrinsic_shape": [
+    4,
+    3,
+    3
+  ]
+}

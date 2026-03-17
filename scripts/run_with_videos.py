@@ -292,10 +292,10 @@ def run_orbit_pipeline(
                     negative_prompt=cfg.inpaint_negative_prompt,
                     model_id=cfg.inpaint_model_id,
                     device=device,
-                    num_inference_steps=cfg.inpaint_steps,
-                    guidance_scale=cfg.inpaint_guidance_scale,
-                    strength=0.95,
-                    padding_mask_crop=32,
+                    num_inference_steps=max(cfg.inpaint_steps, 20),  # SDXL needs 15–30 steps
+                    guidance_scale=8.0,  # official SDXL inpainting recommendation
+                    strength=0.99,  # must be below 1.0; 0.95 preserved white → white output
+                    padding_mask_crop=None,  # avoid crop issues with small hole masks
                     seed=cfg.seed + generated_count,
                     allow_fallback_to_opencv=True,
                 )

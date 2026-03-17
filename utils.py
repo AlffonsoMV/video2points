@@ -1842,12 +1842,6 @@ def inpaint_with_diffusion(
     image = image.convert("RGB")
     mask = mask.convert("L")
 
-    # SDXL inpainting on MPS consistently produces degenerate (white) output.
-    # Force CPU to get correct results. Slower but actually works.
-    if device == "mps":
-        print("  [inpaint] SDXL inpainting broken on MPS; using CPU instead.")
-        device = "cpu"
-
     # SDXL inpainting was trained with WHITE in holes; gray/other fills are OOD and cause the model
     # to preserve input instead of generating. Ensure white in masked regions before calling pipeline.
     image_for_sdxl = _composite_preserve_unmasked(
@@ -1895,6 +1889,24 @@ def inpaint_with_diffusion(
         if resized or upscaled_for_sdxl:
             raw = raw.resize(orig_size, Image.Resampling.LANCZOS)
         composited = _composite_preserve_unmasked(image, raw, mask)
+        # MPS can produce degenerate (all-black or all-white) output; retry on CPU
+        if device == "mps" and _masked_region_degenerate(raw, mask):
+            print("  [inpaint] Degenerate MPS output detected, retrying on CPU.")
+            return inpaint_with_diffusion(
+                image=image,
+                mask=mask,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                model_id=model_id,
+                device="cpu",
+                backend="diffusers",
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                strength=strength,
+                padding_mask_crop=padding_mask_crop,
+                seed=seed,
+                allow_fallback_to_opencv=allow_fallback_to_opencv,
+            )
         return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="diffusers", resized_for_model=resized or upscaled_for_sdxl)
     except Exception as exc:
         if not allow_fallback_to_opencv:

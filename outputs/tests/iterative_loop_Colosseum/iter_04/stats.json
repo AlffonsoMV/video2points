@@ -1,0 +1,89 @@
+{
+  "iteration_index": 4,
+  "seed": 5,
+  "device": "mps",
+  "backend": "flux2_klein_local_diffusers",
+  "resized_for_model": true,
+  "input_count_before_generation": 7,
+  "input_count_after_generation": 8,
+  "source_view": {
+    "index": 6,
+    "path": "outputs/tests/iterative_loop_Colosseum/iter_03/03_flux/generated_raw.png",
+    "saved_input_path": "outputs/tests/iterative_loop_Colosseum/iter_04/01_before/source_view_input.png",
+    "saved_render_path": "outputs/tests/iterative_loop_Colosseum/iter_04/01_before/source_view_render.png"
+  },
+  "coverage_before_generation": {
+    "largest_gap_deg": 266.9662938435798,
+    "observed_coverage_deg": 93.03370615642018,
+    "observed_spacing_deg": 5.420843601226807,
+    "max_safe_step_deg": 107.75679016113281,
+    "target_gap_deg": 12.0,
+    "step_from_boundary_deg": 12.0,
+    "boundary_side": "gap_end",
+    "target_angle_deg": 268.8791706168423,
+    "camera_angles_deg": [
+      -79.1208267211914,
+      -77.52001953125,
+      -23.641624450683594,
+      1.3764643824742961e-07,
+      3.0711889266967773,
+      8.069046974182129,
+      13.91287612915039
+    ],
+    "orbit_radius": 0.777184784412384
+  },
+  "projection_stats_before": {
+    "projected_count": 80126,
+    "valid_ratio": 0.5261340057258425,
+    "hole_ratio": 0.6506973445748956
+  },
+  "flux_inputs": [
+    "outputs/tests/iterative_loop_Colosseum/iter_04/00_inputs/00_pos2_flux_base.png",
+    "outputs/tests/iterative_loop_Colosseum/iter_04/00_inputs/01_reference_generated_context.png",
+    "outputs/tests/iterative_loop_Colosseum/iter_04/00_inputs/02_reference_generated_context.png"
+  ],
+  "environment_anchor_paths": [
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_000.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_001.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_002.png",
+    "outputs/tests/iterative_loop_Colosseum/00_seed_frames/Colosseum_frame_003.png"
+  ],
+  "environment_anchor_sheet_path": "outputs/tests/iterative_loop_Colosseum/iter_04/00_inputs/01_environment_anchor_sheet.png",
+  "flux_output": {
+    "raw_path": "outputs/tests/iterative_loop_Colosseum/iter_04/03_flux/generated_raw.png",
+    "composited_path": "outputs/tests/iterative_loop_Colosseum/iter_04/03_flux/generated_composited.png",
+    "vggt_input_path": "outputs/tests/iterative_loop_Colosseum/iter_04/03_flux/generated_raw.png",
+    "vggt_input_mask_path": null,
+    "metadata": {
+      "reference_count": 2,
+      "model_id": "black-forest-labs/FLUX.2-klein-4B"
+    }
+  },
+  "pose_and_coverage_after": {
+    "largest_gap_after_deg": 250.33708498834903,
+    "gap_improvement_deg": 16.629208855230786,
+    "predicted_angle_deg": -36.27198937982493,
+    "min_angle_to_existing_deg": 6.916211987514476,
+    "target_pose_error": {
+      "rotation_error_deg": 66.65060866133568,
+      "translation_l2_normalized": 19.34603500366211,
+      "translation_direction_error_deg": 40.5225554869418,
+      "target_translation_norm": 26.58259391784668,
+      "predicted_translation_norm": 11.491945266723633,
+      "translation_norm_ratio_pred_over_target": 0.43231090623584023
+    }
+  },
+  "paths": {
+    "before_point_cloud_ply": "outputs/tests/iterative_loop_Colosseum/iter_04/01_before/point_cloud.ply",
+    "before_point_cloud_png": "outputs/tests/iterative_loop_Colosseum/iter_04/01_before/point_cloud.png",
+    "pos2_render_before": "outputs/tests/iterative_loop_Colosseum/iter_04/02_target_pos2/pos2_render_before.png",
+    "pos2_flux_base": "outputs/tests/iterative_loop_Colosseum/iter_04/02_target_pos2/pos2_flux_base.png",
+    "hole_mask": "outputs/tests/iterative_loop_Colosseum/iter_04/02_target_pos2/hole_mask.png",
+    "hole_mask_overlay": "outputs/tests/iterative_loop_Colosseum/iter_04/02_target_pos2/hole_mask_overlay.png",
+    "generated_raw": "outputs/tests/iterative_loop_Colosseum/iter_04/03_flux/generated_raw.png",
+    "generated_composited": "outputs/tests/iterative_loop_Colosseum/iter_04/03_flux/generated_composited.png",
+    "after_point_cloud_ply": "outputs/tests/iterative_loop_Colosseum/iter_04/04_after/point_cloud.ply",
+    "after_point_cloud_png": "outputs/tests/iterative_loop_Colosseum/iter_04/04_after/point_cloud.png",
+    "pos2_render_after": "outputs/tests/iterative_loop_Colosseum/iter_04/04_after/pos2_render_after.png"
+  }
+}
