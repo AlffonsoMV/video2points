@@ -119,6 +119,34 @@ def overlay_mask_on_image(
     return np_to_pil_rgb(out)
 
 
+def overlay_mask_by_hole_size(
+    image: Image.Image | np.ndarray,
+    mask: Image.Image | np.ndarray,
+    min_hole_area: int = 16,
+    color_large: tuple[int, int, int] = (255, 40, 40),
+    color_small: tuple[int, int, int] = (40, 200, 40),
+    alpha: float = 0.45,
+) -> Image.Image:
+    """Overlay holes color-coded by size: red for diffusion, green for OpenCV."""
+    import cv2
+
+    img = pil_to_np_rgb(image) if isinstance(image, Image.Image) else np.asarray(image).copy()
+    m = np.asarray(mask.convert("L") if isinstance(mask, Image.Image) else mask)
+    binary = (m > 0).astype(np.uint8)
+    num_labels, labels = cv2.connectedComponents(binary, connectivity=8)
+
+    out = img.copy()
+    for label_id in range(1, num_labels):
+        component = labels == label_id
+        area = int(component.sum())
+        color = color_large if area >= min_hole_area else color_small
+        overlay = np.array(color, dtype=np.uint8)
+        out[component] = np.clip(
+            (1 - alpha) * img[component] + alpha * overlay, 0, 255,
+        ).astype(np.uint8)
+    return np_to_pil_rgb(out)
+
+
 def to_pil_mask(mask: np.ndarray | Image.Image) -> Image.Image:
     if isinstance(mask, Image.Image):
         return mask.convert("L")

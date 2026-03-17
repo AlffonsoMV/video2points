@@ -1,4 +1,4 @@
-"""Inpainting: hole masks, FLUX2-klein, SDXL, OpenCV fallback."""
+"""Inpainting: hole masks, FLUX2-klein, FLUX Fill, OpenCV fallback."""
 from __future__ import annotations
 
 import base64
@@ -15,15 +15,21 @@ from PIL import Image
 
 from pipeline._state import _INPAINT_PIPE_CACHE, get_device
 from pipeline.config import InpaintResult, RenderResult
+
+
+def _get_hf_token() -> str | None:
+    """HuggingFace token for gated models (FLUX.1-Fill-dev, etc.). Set HF_TOKEN or HUGGING_FACE_HUB_TOKEN."""
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
 from pipeline.io import pil_to_np_rgb, np_to_pil_rgb
 from pipeline.viz import overlay_mask_on_image, to_pil_mask
 
 
 def build_hole_mask_from_valid_mask(
     valid_mask: np.ndarray,
-    close_px: int = 15,
-    dilate_px: int = 3,
+    close_px: int = 3,
+    dilate_px: int = 1,
     min_area_px: int = 2,
+    shrink_px: int | None = None,
     exterior_only: bool = False,
 ) -> np.ndarray:
     """Build hole mask using flood-fill to classify interior vs exterior.
@@ -46,9 +52,7 @@ def build_hole_mask_from_valid_mask(
 
     silhouette = binary_fill_holes(closed > 0)
 
-    # The close inflates the silhouette boundary; erode it back to avoid
-    # marking edge pixels as interior holes.
-    shrink = close_px // 2
+    shrink = shrink_px if shrink_px is not None else close_px // 2
     if shrink > 0:
         ek = cv2.getStructuringElement(
             cv2.MORPH_ELLIPSE, (2 * shrink + 1, 2 * shrink + 1),
@@ -84,12 +88,12 @@ def build_hole_mask_from_valid_mask(
 
 def prepare_novel_view_inpainting_inputs(
     render: RenderResult,
-    close_px: int = 15,
-    dilate_px: int = 3,
+    close_px: int = 3,
+    dilate_px: int = 1,
     min_area_px: int = 2,
+    shrink_px: int | None = None,
     exterior_only: bool = False,
     fill_mask_rgb: tuple[int, int, int] | None = None,
-    feather_px: int = 3,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
     novel_img = render.image.convert("RGB")
     hole_mask_np = build_hole_mask_from_valid_mask(
@@ -97,14 +101,9 @@ def prepare_novel_view_inpainting_inputs(
         close_px=close_px,
         dilate_px=dilate_px,
         min_area_px=min_area_px,
+        shrink_px=shrink_px,
         exterior_only=exterior_only,
     )
-
-    if feather_px > 0:
-        k_size = 2 * feather_px + 1
-        hole_mask_np = cv2.GaussianBlur(
-            hole_mask_np, (k_size, k_size), 0,
-        )
 
     if fill_mask_rgb is not None:
         masked_base_np = np.asarray(novel_img, dtype=np.uint8).copy()
@@ -160,6 +159,11 @@ def _looks_like_bfl_flux2_klein(model_id: str) -> bool:
     )
 
 
+def _looks_like_flux_fill(model_id: str) -> bool:
+    mid = (model_id or "").strip().lower()
+    return "flux.1-fill" in mid or "flux-fill" in mid
+
+
 def _normalize_bfl_flux2_klein_endpoint(model_id: str) -> str:
     mid = (model_id or "").strip()
     if mid.startswith("bfl:"):
@@ -175,21 +179,6 @@ def opencv_inpaint_fallback(image: Image.Image, mask: Image.Image, radius: int =
     out = cv2.inpaint(img_np, mask_np, inpaintRadius=radius, flags=cv2.INPAINT_TELEA)
     out = cv2.cvtColor(out, cv2.COLOR_BGR2RGB)
     return np_to_pil_rgb(out)
-
-
-def _masked_region_degenerate(image: Image.Image, mask: Image.Image) -> bool:
-    """Detect degenerate SDXL output: masked region is nearly all-black or all-white."""
-    mask_np = np.asarray(mask.convert("L")) > 0
-    if not np.any(mask_np):
-        return False
-    img_np = np.asarray(image.convert("RGB"), dtype=np.float32)
-    region = img_np[mask_np]
-    if region.size == 0:
-        return False
-    mean, std = float(region.mean()), float(region.std())
-    near_black = mean < 2.0 and std < 2.0
-    near_white = mean > 253.0 and std < 2.0
-    return near_black or near_white
 
 
 def _load_reference_images(reference_images: Iterable[Image.Image | str | Path] | None) -> list[Image.Image]:
@@ -227,7 +216,9 @@ def load_flux2_klein_pipeline(
             "Install with: pip install --upgrade --no-cache-dir git+https://github.com/huggingface/diffusers.git@main"
         )
 
-    pipe = Flux2KleinPipeline.from_pretrained(model_id, torch_dtype=dtype)
+    pipe = Flux2KleinPipeline.from_pretrained(
+        model_id, torch_dtype=dtype, token=_get_hf_token()
+    )
 
     # GPU-only offload helpers are not useful on MPS/CPU; only enable on CUDA.
     if device == "cuda":
@@ -566,64 +557,149 @@ def inpaint_with_flux2_klein_bfl(
     )
 
 
-def load_inpainting_pipeline(
-    model_id: str = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+MASK_DILATE_PX = 12  # Overlap into object so VAE 8×8 blocks don't straddle boundary
+
+FLUX_FILL_MODEL = "black-forest-labs/FLUX.1-Fill-dev"
+
+
+def inpaint_with_flux_fill(
+    image: Image.Image,
+    mask: Image.Image,
+    prompt: str,
+    model_id: str = FLUX_FILL_MODEL,
     device: str | None = None,
-    use_cache: bool = True,
-) -> Any:
-    from diffusers import AutoPipelineForInpainting
+    num_inference_steps: int = 50,
+    guidance_scale: float = 30.0,
+    seed: int = 0,
+    allow_fallback_to_opencv: bool = True,
+) -> InpaintResult:
+    """Inpaint using FLUX.1-Fill-dev — state-of-the-art inpainting (2024+)."""
+    try:
+        from diffusers import FluxFillPipeline
+    except ImportError:
+        raise ImportError(
+            "FluxFillPipeline requires diffusers>=0.32.0. "
+            "Upgrade: pip install -U diffusers"
+        ) from None
 
     device = device or get_device()
-    # MPS is often more stable with float32 for SD inpainting than float16.
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    cache_key = (model_id, device, str(dtype))
-    if use_cache and cache_key in _INPAINT_PIPE_CACHE:
-        return _INPAINT_PIPE_CACHE[cache_key]
+    orig = image.convert("RGB")
+    mask = mask.convert("L")
 
-    def _load_pipe(**kwargs: Any) -> Any:
-        return AutoPipelineForInpainting.from_pretrained(model_id, **kwargs)
+    if orig.size != mask.size:
+        mask = mask.resize(orig.size, Image.Resampling.NEAREST)
 
-    pipe = None
-    load_errors: list[str] = []
-    base_kwargs = {"torch_dtype": dtype, "safety_checker": None, "requires_safety_checker": False}
-    if dtype == torch.float16:
+    w, h = orig.size
+    FLUX_MIN_SIDE = 1024
+    short_side = min(w, h)
+    if short_side < FLUX_MIN_SIDE:
+        scale = FLUX_MIN_SIDE / short_side
+        w, h = int(w * scale), int(h * scale)
+        orig = orig.resize((w, h), Image.Resampling.LANCZOS)
+        mask = mask.resize((w, h), Image.Resampling.NEAREST)
+        print(f"  [inpaint] FLUX Fill: upscaled to {w}x{h} (min side {FLUX_MIN_SIDE})")
+
+    h_aligned = max(8, (h // 8) * 8)
+    w_aligned = max(8, (w // 8) * 8)
+    pipe_image = orig.resize((w_aligned, h_aligned), Image.Resampling.LANCZOS) if (w_aligned, h_aligned) != (w, h) else orig
+    pipe_mask = mask.resize((w_aligned, h_aligned), Image.Resampling.NEAREST) if (w_aligned, h_aligned) != (w, h) else mask
+
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    cache_key = (model_id, device, "flux_fill")
+    if cache_key not in _INPAINT_PIPE_CACHE:
+        hf_token = _get_hf_token()
+        if not hf_token:
+            print("  [inpaint] FLUX.1-Fill-dev is gated. Set HF_TOKEN or HUGGING_FACE_HUB_TOKEN (huggingface-cli login).")
+        print(f"  [inpaint] Loading FLUX.1-Fill-dev ({model_id}) ...")
+        pipe = FluxFillPipeline.from_pretrained(
+            model_id,
+            torch_dtype=dtype,
+            token=hf_token,
+        ).to(device)
         try:
-            pipe = _load_pipe(**base_kwargs, variant="fp16")
-        except Exception as exc:
-            load_errors.append(f"fp16 variant load failed: {exc}")
-    if pipe is None:
-        try:
-            pipe = _load_pipe(**base_kwargs)
-        except Exception as exc:
-            load_errors.append(f"default dtype load failed: {exc}")
-            pipe = _load_pipe(torch_dtype=torch.float32)
-            dtype = torch.float32
-
-    pipe = pipe.to(device)
-    if hasattr(pipe, "safety_checker"):
-        pipe.safety_checker = None
-    if hasattr(pipe, "requires_safety_checker"):
-        pipe.requires_safety_checker = False
-    try:
-        pipe.enable_attention_slicing()
-    except Exception:
-        pass
-    try:
-        pipe.enable_vae_slicing()
-    except Exception:
-        pass
-    try:
-        pipe.set_progress_bar_config(disable=True)
-    except Exception:
-        pass
-
-    if use_cache:
+            pipe.enable_attention_slicing()
+        except Exception:
+            pass
         _INPAINT_PIPE_CACHE[cache_key] = pipe
-    if load_errors:
-        print("[load_inpainting_pipeline] warnings:")
-        for err in load_errors:
-            print(" -", err)
-    return pipe
+    pipe = _INPAINT_PIPE_CACHE[cache_key]
+
+    # FLUX.1-Fill: avoid forcing high guidance (washed-out blur); clamp only if very low
+    gs = max(guidance_scale, 7.0) if guidance_scale < 5 else guidance_scale
+
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+    result = pipe(
+        prompt=prompt,
+        image=pipe_image,
+        mask_image=pipe_mask,
+        height=h_aligned,
+        width=w_aligned,
+        guidance_scale=gs,
+        num_inference_steps=num_inference_steps,
+        max_sequence_length=512,
+        generator=generator,
+    )
+    raw = result.images[0].convert("RGB")
+
+    if (w_aligned, h_aligned) != (w, h):
+        raw = raw.resize((w, h), Image.Resampling.LANCZOS)
+
+    composited = _composite_preserve_unmasked(orig, raw, mask)
+    return InpaintResult(
+        raw_generated=raw,
+        composited=composited,
+        mask_used=mask,
+        backend="flux_fill",
+        resized_for_model=(w_aligned, h_aligned) != (w, h),
+    )
+
+
+def inpaint_holes_individually(
+    image: Image.Image,
+    mask: Image.Image,
+    min_hole_area: int = 16,
+    **kwargs: Any,
+) -> InpaintResult:
+    """Inpaint holes using FLUX Fill or OpenCV fallback. Uses dilated hole mask only."""
+    hole_mask_np = (np.asarray(mask.convert("L")) > 0).astype(np.uint8) * 255
+
+    # Dilate hole mask so inpaint region overlaps into object (avoids VAE block seams)
+    if MASK_DILATE_PX > 0:
+        kernel = np.ones((MASK_DILATE_PX * 2 + 1, MASK_DILATE_PX * 2 + 1), np.uint8)
+        dilated_hole_np = cv2.dilate(hole_mask_np, kernel, iterations=1)
+    else:
+        dilated_hole_np = hole_mask_np
+
+    mask_for_inpaint = Image.fromarray(dilated_hole_np, mode="L")
+    mask_pct = (dilated_hole_np > 0).sum() / dilated_hole_np.size * 100
+    print(f"  [inpaint] dilated hole mask ({mask_pct:.1f}%)")
+
+    if mask_pct > 85:
+        print(f"  [inpaint] mask too large ({mask_pct:.0f}%); using OpenCV fallback")
+        raw = opencv_inpaint_fallback(image, mask, radius=5)
+        composited = _composite_preserve_unmasked(image, raw, mask)
+        return InpaintResult(
+            raw_generated=raw, composited=composited, mask_used=mask,
+            backend="opencv_telea_fallback", resized_for_model=False,
+        )
+
+    result = inpaint_with_diffusion(
+        image=image,
+        mask=mask_for_inpaint,
+        **kwargs,
+    )
+
+    # Composite using dilated hole mask so we include the overlap zone (clean blending)
+    dilated_hole_pil = Image.fromarray(dilated_hole_np, mode="L")
+    composited = _composite_preserve_unmasked(image, result.raw_generated, dilated_hole_pil)
+
+    return InpaintResult(
+        raw_generated=result.raw_generated,
+        composited=composited,
+        mask_used=mask,
+        backend=result.backend,
+        resized_for_model=result.resized_for_model,
+        metadata={"mask_pct": mask_pct},
+    )
 
 
 def inpaint_with_diffusion(
@@ -631,14 +707,14 @@ def inpaint_with_diffusion(
     mask: Image.Image,
     prompt: str,
     negative_prompt: str | None = "blurry, distorted, duplicated structures, changed visible regions",
-    model_id: str = "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+    model_id: str = FLUX_FILL_MODEL,
     device: str | None = None,
     reference_images: Iterable[Image.Image | str | Path] | None = None,
     backend: str = "auto",
     num_inference_steps: int = 20,
     guidance_scale: float = 6.5,
     strength: float = 0.95,
-    padding_mask_crop: int | None = 32,
+    padding_mask_crop: int | None = 128,
     seed: int = 0,
     allow_fallback_to_opencv: bool = True,
     bfl_api_key: str | None = None,
@@ -656,8 +732,10 @@ def inpaint_with_diffusion(
                 backend = "flux2_klein_bfl"
             else:
                 backend = "flux2_klein_local"
+        elif _looks_like_flux_fill(model_id):
+            backend = "flux_fill"
         else:
-            backend = "diffusers"
+            backend = "opencv_fallback"  # SDXL removed; use FLUX.1-Fill-dev
 
     print(f"  [inpaint] backend={backend}, model={model_id}, steps={num_inference_steps}")
     t0 = time.time()
@@ -706,79 +784,45 @@ def inpaint_with_diffusion(
             composited = _composite_preserve_unmasked(image, raw, mask)
             return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="opencv_telea_fallback", resized_for_model=False, metadata={"flux2_error": str(exc)})
 
-    image = image.convert("RGB")
-    mask = mask.convert("L")
-
-    # SDXL inpainting was trained with WHITE in holes; gray/other fills are OOD and cause the model
-    # to preserve input instead of generating. Ensure white in masked regions before calling pipeline.
-    image_for_sdxl = _composite_preserve_unmasked(
-        image,
-        Image.new("RGB", image.size, (255, 255, 255)),
-        mask,
-    )
-
-    # SDXL was trained at 1024x1024. Small images (e.g. 294x518) produce degenerate output.
-    # Upscale so the short side is at least 1024, then downscale the result back.
-    SDXL_MIN_SIDE = 1024
-    orig_size = image.size  # (w, h)
-    w, h = orig_size
-    short_side = min(w, h)
-    upscaled_for_sdxl = False
-    if short_side < SDXL_MIN_SIDE:
-        scale = SDXL_MIN_SIDE / short_side
-        new_w, new_h = int(w * scale), int(h * scale)
-        image_for_sdxl = image_for_sdxl.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        mask_for_sdxl = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
-        upscaled_for_sdxl = True
-        print(f"  [inpaint] Upscaling {w}x{h} → {new_w}x{new_h} for SDXL (trained at 1024x1024)")
-    else:
-        mask_for_sdxl = mask
-
-    image_for_pipe, mask_for_pipe, resized = _resize_to_multiple_of_8(image_for_sdxl, mask_for_sdxl)
-
-    try:
-        pipe = load_inpainting_pipeline(model_id=model_id, device=device)
-        generator = torch.Generator(device="cpu").manual_seed(seed)
-        pipe_kw: dict[str, Any] = {
-            "prompt": prompt,
-            "negative_prompt": negative_prompt,
-            "image": image_for_pipe,
-            "mask_image": mask_for_pipe,
-            "num_inference_steps": int(num_inference_steps),
-            "guidance_scale": float(guidance_scale),
-            "strength": float(strength),
-            "generator": generator,
-        }
-        if padding_mask_crop is not None:
-            pipe_kw["padding_mask_crop"] = int(padding_mask_crop)
-        result = pipe(**pipe_kw)
-        raw = result.images[0].convert("RGB")
-        if resized or upscaled_for_sdxl:
-            raw = raw.resize(orig_size, Image.Resampling.LANCZOS)
+    if backend == "opencv_fallback":
+        print("[inpaint_with_diffusion] SDXL removed. Use FLUX.1-Fill-dev or --skip-sdxl for OpenCV.")
+        image = image.convert("RGB")
+        mask = mask.convert("L")
+        raw = opencv_inpaint_fallback(image, mask, radius=5)
         composited = _composite_preserve_unmasked(image, raw, mask)
-        # MPS can produce degenerate (all-black or all-white) output; retry on CPU
-        if device == "mps" and _masked_region_degenerate(raw, mask):
-            print("  [inpaint] Degenerate MPS output detected, retrying on CPU.")
-            return inpaint_with_diffusion(
+        return InpaintResult(
+            raw_generated=raw, composited=composited, mask_used=mask,
+            backend="opencv_telea_fallback", resized_for_model=False,
+            metadata={"reason": "sdxl_removed"},
+        )
+
+    if backend == "flux_fill":
+        try:
+            return inpaint_with_flux_fill(
                 image=image,
                 mask=mask,
                 prompt=prompt,
-                negative_prompt=negative_prompt,
                 model_id=model_id,
-                device="cpu",
-                backend="diffusers",
+                device=device,
                 num_inference_steps=num_inference_steps,
                 guidance_scale=guidance_scale,
-                strength=strength,
-                padding_mask_crop=padding_mask_crop,
                 seed=seed,
                 allow_fallback_to_opencv=allow_fallback_to_opencv,
             )
-        return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="diffusers", resized_for_model=resized or upscaled_for_sdxl)
-    except Exception as exc:
-        if not allow_fallback_to_opencv:
-            raise
-        print(f"[inpaint_with_diffusion] Diffusion inpainting failed, falling back to OpenCV Telea: {exc}")
-        raw = opencv_inpaint_fallback(image, mask)
-        composited = _composite_preserve_unmasked(image, raw, mask)
-        return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="opencv_telea_fallback", resized_for_model=resized)
+        except Exception as exc:
+            if not allow_fallback_to_opencv:
+                raise
+            err_str = str(exc)
+            if "401" in err_str or "restricted" in err_str.lower() or "authenticated" in err_str.lower():
+                print(
+                    "[inpaint_with_diffusion] FLUX.1-Fill is gated. Set HF_TOKEN or run: huggingface-cli login. "
+                    "Accept license at https://huggingface.co/black-forest-labs/FLUX.1-Fill-dev"
+                )
+            print(f"[inpaint_with_diffusion] FLUX.1-Fill failed, falling back to OpenCV Telea: {exc}")
+            image = image.convert("RGB")
+            mask = mask.convert("L")
+            raw = opencv_inpaint_fallback(image, mask)
+            composited = _composite_preserve_unmasked(image, raw, mask)
+            return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="opencv_telea_fallback", resized_for_model=False, metadata={"flux_fill_error": str(exc)})
+
+    raise RuntimeError(f"Unknown inpainting backend: {backend}")

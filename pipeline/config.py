@@ -14,7 +14,7 @@ class PipelineConfig:
     output_dir: str = "outputs"
     input_image_stem: str = "image_01"
     vggt_model_id: str = "facebook/VGGT-1B"
-    inpaint_model_id: str = "black-forest-labs/FLUX.2-klein-4B"
+    inpaint_model_id: str = "black-forest-labs/FLUX.1-Fill-dev"
     inpaint_backend: str = "auto"  # auto | diffusers | flux2_klein_bfl
     bfl_api_base_url: str = "https://api.bfl.ai"
     bfl_api_key_env: str = "BFL_API_KEY"
@@ -31,20 +31,21 @@ class PipelineConfig:
     novel_yaw_deg: float = -4.0
     novel_pitch_deg: float = 0.0
     novel_roll_deg: float = 0.0
-    mask_close_px: int = 15
-    mask_dilate_px: int = 3
+    mask_close_px: int = 6
+    mask_dilate_px: int = 12
+    mask_shrink_px: int | None = 5  # Erode silhouette to reduce mask at edges. None = close_px//2
     mask_min_area_px: int = 2
     mask_exterior_only: bool = False
     mask_fill_rgb: tuple[int, int, int] | None = None
-    inpaint_steps: int = 6
-    inpaint_guidance_scale: float = 1.0
+    inpaint_steps: int = 75
+    inpaint_guidance_scale: float = 10
     inpaint_prompt: str = (
-        "Photorealistic continuation of the same scene from a slightly shifted viewpoint, "
-        "fill only missing regions and preserve visible content, lighting, geometry, and textures."
+        "Photorealistic continuation, 4K ultra-HD, sharp and detailed. In focus, in foreground, "
+        "extremely sharp. Fill only missing regions and preserve visible content, lighting, geometry, and textures."
     )
     inpaint_negative_prompt: str = (
-        "white background, blank, empty, white fill, changes to visible regions, "
-        "duplicated objects, warped geometry, blurry details, oversmoothing"
+        "solid color fill, flat color, blank, empty, minimal backdrop, changes to visible regions, "
+        "duplicated objects, warped geometry, blurry, out of focus, depth of field, oversmoothing"
     )
     seed: int = 0
     n_frames_per_video: int = 7

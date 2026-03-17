@@ -17,7 +17,7 @@ def main() -> None:
         render_point_radius=1,
         novel_shift_right=0.10,
         novel_yaw_deg=-3.5,
-        inpaint_model_id="black-forest-labs/FLUX.2-klein-4B",
+        inpaint_model_id="black-forest-labs/FLUX.1-Fill-dev",
         inpaint_steps=4,  # FLUX2-klein local smoke-test speed
         inpaint_guidance_scale=1.0,
         seed=1,

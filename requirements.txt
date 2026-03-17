@@ -18,8 +18,9 @@ Pillow
 # is not in the published release as of diffusers==0.32.2):
 #   pip install --upgrade --no-cache-dir git+https://github.com/huggingface/diffusers.git@main
 #
-# For the standard SD-XL inpainting backend the stable release is sufficient:
-diffusers
+# FLUX.1-Fill-dev inpainting requires diffusers>=0.32.0.
+# SD-XL inpainting works with stable release:
+diffusers>=0.32.0
 
 # Notebook support (optional, only needed to run the .ipynb)
 jupyterlab

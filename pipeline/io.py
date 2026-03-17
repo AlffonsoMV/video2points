@@ -1,6 +1,7 @@
 """I/O utilities: directories, images, videos."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Iterable
 
@@ -197,8 +198,27 @@ def load_pil_rgb(path: str | Path) -> Image.Image:
 def save_pil(image: Image.Image, path: str | Path) -> Path:
     path = Path(path)
     ensure_dir(path.parent)
-    image.save(path)
+    try:
+        image.save(path)
+    except OSError as e:
+        if e.errno == 28:  # No space left on device
+            raise RuntimeError(
+                "No space left on device. Free disk space and retry:\n"
+                "  python -m scripts.clear_hf_cache           # removes SDXL (~14GB)\n"
+                "  python -m scripts.clear_hf_cache --remove-partial  # removes partial FLUX (~21GB)"
+            ) from e
+        raise
     return path
+
+
+def check_disk_space(path: str | Path, min_gb: float = 5.0) -> tuple[float, bool]:
+    """Return (free_gb, ok). Warn if free < min_gb."""
+    path = Path(path).resolve()
+    if not path.exists():
+        path = path.parent if path.parent.exists() else Path.cwd()
+    stat = shutil.disk_usage(path)
+    free_gb = stat.free / (1024**3)
+    return free_gb, free_gb >= min_gb
 
 
 def pil_to_np_rgb(image: Image.Image) -> np.ndarray:

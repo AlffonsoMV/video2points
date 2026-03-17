@@ -24,15 +24,16 @@ from pipeline.inpainting import (
     build_hole_mask_from_valid_mask,
     edit_with_flux2_klein_local,
     enhance_quality_with_flux2_klein,
+    inpaint_holes_individually,
     inpaint_with_diffusion,
     inpaint_with_flux2_klein_bfl,
     load_flux2_klein_pipeline,
-    load_inpainting_pipeline,
     opencv_inpaint_fallback,
     prepare_novel_view_inpainting_inputs,
     refine_image_with_flux2_klein,
 )
 from pipeline.io import (
+    check_disk_space,
     ensure_dir,
     ensure_png_copy,
     extract_frame_from_video,
@@ -70,6 +71,7 @@ from pipeline.vggt import load_vggt_model, run_vggt_reconstruction
 from pipeline.viz import (
     build_two_view_reconstruction,
     describe_scene,
+    overlay_mask_by_hole_size,
     overlay_mask_on_image,
     plot_image_grid,
     plot_point_cloud_3d,
@@ -100,6 +102,7 @@ __all__ = [
     "vector_angle_deg",
     "relative_pose_comparison",
     # io
+    "check_disk_space",
     "ensure_dir",
     "resolve_input_image",
     "list_data_images",
@@ -143,7 +146,7 @@ __all__ = [
     "refine_image_with_flux2_klein",
     "enhance_quality_with_flux2_klein",
     "inpaint_with_flux2_klein_bfl",
-    "load_inpainting_pipeline",
+    "inpaint_holes_individually",
     "inpaint_with_diffusion",
     # metrics
     "load_lpips_model",
@@ -151,6 +154,7 @@ __all__ = [
     # viz
     "plot_point_cloud_3d",
     "save_point_cloud_ply",
+    "overlay_mask_by_hole_size",
     "overlay_mask_on_image",
     "to_pil_mask",
     "save_matplotlib_figure",

@@ -53,7 +53,7 @@ class IterativeLoopConfig:
     max_iterations: int | None = None
     environment_anchor_count: int = 4
     environment_anchor_start_iteration: int = 1
-    step_scale: float = 1.0
+    step_scale: float = 0.6
     min_step_deg: float = 0.0
     output_root: str = "outputs/iterative"
 
@@ -314,9 +314,10 @@ def build_environment_anchor_sheet(
     width, height = output_size
     columns = min(2, len(selected_paths))
     rows = ceil(len(selected_paths) / columns)
-    outer_margin = max(min(width, height) // 32, 8)
-    gutter = max(min(width, height) // 48, 10)
-    border = max(gutter // 4, 2)
+    short_side = min(width, height)
+    outer_margin = max(short_side // 12, 20)
+    gutter = max(short_side // 12, 24)
+    border = max(gutter // 3, 4)
     usable_width = max(width - 2 * outer_margin - (columns - 1) * gutter, columns)
     usable_height = max(height - 2 * outer_margin - (rows - 1) * gutter, rows)
     tile_width = max(usable_width // columns, 1)
@@ -332,22 +333,20 @@ def build_environment_anchor_sheet(
         y = outer_margin + (idx // columns) * (tile_height + gutter)
         draw.rectangle([x, y, x + tile_width - 1, y + tile_height - 1], fill=(245, 245, 245), outline=(0, 0, 0), width=border)
         canvas.paste(tile, (x + border, y + border))
+
+    label = "REFERENCE ONLY"
+    font_size = max(short_side // 18, 14)
+    try:
+        from PIL import ImageFont
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+    except Exception:
+        font = ImageFont.load_default()
+    bbox = draw.textbbox((0, 0), label, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    tx = (width - tw) // 2
+    ty = height - outer_margin // 2 - th
+    draw.text((tx, ty), label, fill=(160, 160, 160), font=font)
     return canvas
-
-
-def build_generation_prompt(
-    base_prompt: str,
-    *,
-    uses_anchor_sheet: bool,
-) -> str:
-    if not uses_anchor_sheet:
-        return base_prompt
-    return (
-        f"{base_prompt} "
-        "One reference image is a contact-sheet collage of separate reference photos divided by thick white gutters and borders. "
-        "Treat each tile as an independent reference photo, not as one real scene. "
-        "Do not reproduce the collage layout or create multiple copies of the subject because multiple tiles are shown."
-    )
 
 
 def observed_spacing_statistics_deg(sorted_angles_rad: np.ndarray) -> tuple[float, float]:
@@ -685,6 +684,7 @@ def generate_iteration(
         close_px=pipeline_cfg.mask_close_px,
         dilate_px=pipeline_cfg.mask_dilate_px,
         min_area_px=pipeline_cfg.mask_min_area_px,
+        shrink_px=pipeline_cfg.mask_shrink_px,
         exterior_only=pipeline_cfg.mask_exterior_only,
         fill_mask_rgb=pipeline_cfg.mask_fill_rgb,
     )
@@ -709,29 +709,39 @@ def generate_iteration(
         target_angle_rad=orbit_plan.target_angle_rad,
         max_reference_images=loop_cfg.max_reference_images,
     )
-    reference_images_for_generation: list[Any] = [novel_render.image]
+    diagnostic_reference_images: list[Any] = [novel_render.image]
     if environment_anchor_sheet is not None:
-        reference_images_for_generation.append(environment_anchor_sheet)
-    reference_images_for_generation.extend(extra_reference_images)
-    flux_input_paths = save_flux_inputs(inputs_dir, novel_input, reference_images_for_generation)
-    generation_prompt = build_generation_prompt(
-        pipeline_cfg.inpaint_prompt,
-        uses_anchor_sheet=environment_anchor_sheet is not None,
-    )
+        diagnostic_reference_images.append(environment_anchor_sheet)
+    diagnostic_reference_images.extend(extra_reference_images)
+    flux_input_paths = save_flux_inputs(inputs_dir, novel_input, diagnostic_reference_images)
 
-    inpaint = utils.inpaint_with_diffusion(
-        image=novel_input,
-        mask=hole_mask,
-        prompt=generation_prompt,
-        negative_prompt=pipeline_cfg.inpaint_negative_prompt,
-        model_id=pipeline_cfg.inpaint_model_id,
-        device=utils.get_device(),
-        reference_images=reference_images_for_generation,
-        num_inference_steps=pipeline_cfg.inpaint_steps,
-        guidance_scale=pipeline_cfg.inpaint_guidance_scale,
-        seed=step_seed,
-        allow_fallback_to_opencv=False,
-    )
+    hole_ratio = float((np.asarray(hole_mask) > 0).mean())
+    # Diffusion inpainting produces degenerate output when hole mask covers too much.
+    if hole_ratio > 0.6:
+        print(f"  Hole ratio {hole_ratio:.2%} too high for diffusion; using OpenCV inpainting")
+        raw = utils.opencv_inpaint_fallback(novel_input, hole_mask, radius=5)
+        composited = raw  # OpenCV returns full image; compositing is a no-op
+        inpaint = utils.InpaintResult(
+            raw_generated=raw,
+            composited=composited,
+            mask_used=hole_mask,
+            backend="opencv_telea_fallback",
+            resized_for_model=False,
+            metadata={"hole_ratio": hole_ratio, "reason": "high_hole_ratio"},
+        )
+    else:
+        inpaint = utils.inpaint_with_diffusion(
+            image=novel_input,
+            mask=hole_mask,
+            prompt=pipeline_cfg.inpaint_prompt,
+            negative_prompt=pipeline_cfg.inpaint_negative_prompt,
+            model_id=pipeline_cfg.inpaint_model_id,
+            device=utils.get_device(),
+            num_inference_steps=pipeline_cfg.inpaint_steps,
+            guidance_scale=pipeline_cfg.inpaint_guidance_scale,
+            seed=step_seed,
+            allow_fallback_to_opencv=False,
+        )
     generated_raw_path = utils.save_pil(inpaint.raw_generated, flux_dir / "generated_raw.png")
     generated_composited_path = utils.save_pil(inpaint.composited, flux_dir / "generated_composited.png")
 
@@ -895,15 +905,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-input-background-masking", action="store_true")
     parser.add_argument("--input-background-mask-distance", type=float, default=None)
     parser.add_argument("--mask-exterior-only", action="store_true")
+    parser.add_argument("--mask-close-px", type=int, default=None,
+                        help="Morphological close radius (default 15). Lower = tighter silhouette, less mask around object.")
+    parser.add_argument("--mask-dilate-px", type=int, default=None,
+                        help="Dilate holes for inpainting overlap (default 3)")
+    parser.add_argument("--mask-shrink-px", type=int, default=None,
+                        help="Erode silhouette to reduce mask at edges (default: close_px//2). Higher = less mask around object.")
     parser.add_argument("--max-total-views", type=int, default=30)
     parser.add_argument("--start-view-count", type=int, default=0)
     parser.add_argument("--max-reference-images", type=int, default=0)
     parser.add_argument("--max-iterations", type=int, default=None)
     parser.add_argument("--environment-anchor-count", type=int, default=4)
     parser.add_argument("--environment-anchor-start-iteration", type=int, default=1)
-    parser.add_argument("--step-scale", type=float, default=1.0)
+    parser.add_argument("--step-scale", type=float, default=0.6,
+                        help="Scale factor for angular step size (default 0.6). Lower = smaller steps, more stable.")
     parser.add_argument("--min-step-deg", type=float, default=0.0)
     parser.add_argument("--output-root", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for inpainting and other stochastic steps (default 1).")
     return parser.parse_args()
 
 
@@ -930,17 +949,23 @@ def main() -> None:
         max_points_plot=20000,
         max_points_render=120000,
         render_point_radius=2,
-        inpaint_model_id="black-forest-labs/FLUX.2-klein-4B",
-        inpaint_steps=6,
-        inpaint_guidance_scale=1.0,
+        inpaint_model_id="black-forest-labs/FLUX.1-Fill-dev",
+        inpaint_steps=50,
+        inpaint_guidance_scale=30.0,
         inpaint_prompt=args.inpaint_prompt or default_inpaint_prompt(inferred_subject, video_mode=args.video_path is not None),
-        seed=1,
+        seed=args.seed if args.seed is not None else 1,
         n_frames_per_video=args.video_frame_count,
     )
     if args.mask_exterior_only or inferred_subject == "pyramid":
         pipeline_cfg.mask_exterior_only = True
     if inferred_subject == "pyramid":
         pipeline_cfg.mask_fill_rgb = (255, 255, 255)
+    if args.mask_close_px is not None:
+        pipeline_cfg.mask_close_px = args.mask_close_px
+    if args.mask_dilate_px is not None:
+        pipeline_cfg.mask_dilate_px = args.mask_dilate_px
+    if args.mask_shrink_px is not None:
+        pipeline_cfg.mask_shrink_px = args.mask_shrink_px
 
     utils.seed_everything(pipeline_cfg.seed)
     output_root = utils.ensure_dir(loop_cfg.output_root)
