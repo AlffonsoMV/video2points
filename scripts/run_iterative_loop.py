@@ -682,14 +682,10 @@ def generate_iteration(
 
     novel_input, hole_mask, hole_overlay = utils.prepare_novel_view_inpainting_inputs(
         novel_render,
-        dilate_px=pipeline_cfg.mask_dilate_px,
         close_px=pipeline_cfg.mask_close_px,
+        dilate_px=pipeline_cfg.mask_dilate_px,
         min_area_px=pipeline_cfg.mask_min_area_px,
         exterior_only=pipeline_cfg.mask_exterior_only,
-        interior_only=pipeline_cfg.mask_interior_only,
-        support_close_px=pipeline_cfg.mask_support_close_px,
-        support_dilate_px=pipeline_cfg.mask_support_dilate_px,
-        gap_break_px=pipeline_cfg.mask_gap_break_px,
         fill_mask_rgb=pipeline_cfg.mask_fill_rgb,
     )
     novel_input_path = utils.save_pil(novel_input, target_dir / "pos2_flux_base.png")
@@ -899,8 +895,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable-input-background-masking", action="store_true")
     parser.add_argument("--input-background-mask-distance", type=float, default=None)
     parser.add_argument("--mask-exterior-only", action="store_true")
-    parser.add_argument("--mask-support-close-px", type=int, default=None)
-    parser.add_argument("--mask-support-dilate-px", type=int, default=None)
     parser.add_argument("--max-total-views", type=int, default=30)
     parser.add_argument("--start-view-count", type=int, default=0)
     parser.add_argument("--max-reference-images", type=int, default=0)
@@ -945,14 +939,6 @@ def main() -> None:
     )
     if args.mask_exterior_only or inferred_subject == "pyramid":
         pipeline_cfg.mask_exterior_only = True
-    if args.mask_support_close_px is not None:
-        pipeline_cfg.mask_support_close_px = args.mask_support_close_px
-    elif inferred_subject == "pyramid":
-        pipeline_cfg.mask_support_close_px = 24
-    if args.mask_support_dilate_px is not None:
-        pipeline_cfg.mask_support_dilate_px = args.mask_support_dilate_px
-    elif inferred_subject == "pyramid":
-        pipeline_cfg.mask_support_dilate_px = 6
     if inferred_subject == "pyramid":
         pipeline_cfg.mask_fill_rgb = (255, 255, 255)
 

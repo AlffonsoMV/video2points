@@ -21,76 +21,47 @@ from pipeline.viz import overlay_mask_on_image, to_pil_mask
 
 def build_hole_mask_from_valid_mask(
     valid_mask: np.ndarray,
-    dilate_px: int = 4,
-    close_px: int = 3,
-    min_area_px: int = 16,
+    close_px: int = 15,
+    dilate_px: int = 3,
+    min_area_px: int = 2,
     exterior_only: bool = False,
-    interior_only: bool = False,
-    support_close_px: int = 0,
-    support_dilate_px: int = 0,
-    open_px: int = 0,
-    gap_break_px: int = 2,
 ) -> np.ndarray:
+    """Build hole mask using flood-fill to classify interior vs exterior.
+
+    1. Close the valid mask to bridge gaps between sparse rendered points.
+    2. ``binary_fill_holes`` fills regions not connected to the image border,
+       producing a solid object silhouette.
+    3. Interior holes = inside the silhouette but missing valid data.
+    """
+    from scipy.ndimage import binary_fill_holes
+
     valid = np.asarray(valid_mask, dtype=bool)
 
-    # Start with all holes
-    hole_mask = (~valid).astype(np.uint8) * 255
-
-    if open_px > 0:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * open_px + 1, 2 * open_px + 1))
-        hole_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_OPEN, k)
+    closed = valid.astype(np.uint8) * 255
     if close_px > 0:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1))
-        hole_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_CLOSE, k)
-    if dilate_px > 0:
-        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
-        hole_mask = cv2.dilate(hole_mask, k)
-
-    # Don't mask over actual valid pixels
-    hole_mask[valid] = 0
-
-    # Filter by interior/exterior: check which hole components touch the image border
-    if interior_only or exterior_only:
-        # Opening (erode→dilate) on the mask breaks thin channels that
-        # falsely connect interior holes to the border, without affecting
-        # the bulk shape of real holes.
-        classify_mask = hole_mask
-        if gap_break_px > 0:
-            k = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (2 * gap_break_px + 1, 2 * gap_break_px + 1),
-            )
-            classify_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_OPEN, k)
-
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-            (classify_mask > 0).astype(np.uint8), connectivity=8,
+        k = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1),
         )
-        border_labels = set(np.unique(np.concatenate([
-            labels[0], labels[-1], labels[:, 0], labels[:, -1],
-        ])))
-        border_labels.discard(0)
+        closed = cv2.morphologyEx(closed, cv2.MORPH_CLOSE, k)
 
-        # Build a region mask from the interior/exterior classification
-        interior_region = np.zeros_like(hole_mask)
-        for label in range(1, num_labels):
-            touches_border = label in border_labels
-            if stats[label, cv2.CC_STAT_AREA] < min_area_px:
-                continue
-            keep = (interior_only and not touches_border) or (exterior_only and touches_border)
-            if keep:
-                interior_region[labels == label] = 255
+    silhouette = binary_fill_holes(closed > 0)
 
-        if gap_break_px > 0 and np.any(interior_region):
-            # Dilate the classified regions back to recover original hole
-            # boundary pixels that were eroded away by the opening step.
-            k = cv2.getStructuringElement(
-                cv2.MORPH_ELLIPSE, (2 * (gap_break_px + 2) + 1, 2 * (gap_break_px + 2) + 1),
-            )
-            interior_region = cv2.dilate(interior_region, k)
-            return (hole_mask & interior_region).astype(np.uint8)
+    # The close inflates the silhouette boundary; erode it back to avoid
+    # marking edge pixels as interior holes.
+    shrink = close_px // 2
+    if shrink > 0:
+        ek = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (2 * shrink + 1, 2 * shrink + 1),
+        )
+        silhouette = cv2.erode(
+            silhouette.astype(np.uint8), ek,
+        ).astype(bool)
 
-        return interior_region
+    if exterior_only:
+        hole_mask = (~silhouette & ~valid).astype(np.uint8) * 255
+    else:
+        hole_mask = (silhouette & ~valid).astype(np.uint8) * 255
 
-    # No interior/exterior filtering — just min area
     if min_area_px > 1:
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
             (hole_mask > 0).astype(np.uint8), connectivity=8,
@@ -100,35 +71,33 @@ def build_hole_mask_from_valid_mask(
             if stats[label, cv2.CC_STAT_AREA] >= min_area_px:
                 cleaned[labels == label] = 255
         hole_mask = cleaned
+
+    if dilate_px > 0:
+        k = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1),
+        )
+        hole_mask = cv2.dilate(hole_mask, k)
+        hole_mask[valid] = 0
+
     return hole_mask
 
 
 def prepare_novel_view_inpainting_inputs(
     render: RenderResult,
-    dilate_px: int = 4,
-    close_px: int = 3,
-    min_area_px: int = 16,
+    close_px: int = 15,
+    dilate_px: int = 3,
+    min_area_px: int = 2,
     exterior_only: bool = False,
-    interior_only: bool = False,
-    open_px: int = 0,
-    support_close_px: int = 0,
-    support_dilate_px: int = 0,
-    gap_break_px: int = 2,
     fill_mask_rgb: tuple[int, int, int] | None = None,
     feather_px: int = 3,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
     novel_img = render.image.convert("RGB")
     hole_mask_np = build_hole_mask_from_valid_mask(
         render.valid_mask,
-        dilate_px=dilate_px,
         close_px=close_px,
+        dilate_px=dilate_px,
         min_area_px=min_area_px,
         exterior_only=exterior_only,
-        interior_only=interior_only,
-        open_px=open_px,
-        support_close_px=support_close_px,
-        support_dilate_px=support_dilate_px,
-        gap_break_px=gap_break_px,
     )
 
     if feather_px > 0:
@@ -409,7 +378,9 @@ def enhance_quality_with_flux2_klein(
     model_id: str = "black-forest-labs/FLUX.2-klein-4B",
     device: str | None = None,
     reference_images: Iterable[Image.Image | str | Path] | None = None,
+    protect_mask: Image.Image | None = None,
     foreground_threshold: float = 20.0,
+    erode_px: int = 2,
     num_inference_steps: int = 8,
     guidance_scale: float = 1.0,
     seed: int = 0,
@@ -418,7 +389,12 @@ def enhance_quality_with_flux2_klein(
 
     The full image content is passed to Flux for quality enhancement (no
     hole-blanking). A foreground mask built from non-white pixels is used to
-    composite the result so white background areas stay unchanged.
+    composite the result so white background areas stay strictly unchanged.
+
+    When *protect_mask* is provided (e.g. the hole mask), those pixels are
+    additionally excluded from the foreground mask so Flux cannot touch them.
+    The foreground mask is eroded by *erode_px* to avoid bleeding into
+    white/hole edges.
     """
     device = device or get_device()
     image = image.convert("RGB")
@@ -428,8 +404,16 @@ def enhance_quality_with_flux2_klein(
     white_distance = np.linalg.norm(img_np - np.array([255.0, 255.0, 255.0]), axis=-1)
     fg_mask_np = (white_distance > foreground_threshold).astype(np.uint8) * 255
 
-    dilate_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    fg_mask_np = cv2.dilate(fg_mask_np, dilate_k, iterations=1)
+    if erode_px > 0:
+        erode_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * erode_px + 1, 2 * erode_px + 1))
+        fg_mask_np = cv2.erode(fg_mask_np, erode_k, iterations=1)
+
+    if protect_mask is not None:
+        protect_np = np.asarray(protect_mask.convert("L"), dtype=np.uint8)
+        if protect_np.shape[:2] != fg_mask_np.shape[:2]:
+            protect_pil = protect_mask.convert("L").resize((w, h), Image.Resampling.NEAREST)
+            protect_np = np.asarray(protect_pil, dtype=np.uint8)
+        fg_mask_np[protect_np > 0] = 0
 
     if fg_mask_np.max() == 0:
         return image

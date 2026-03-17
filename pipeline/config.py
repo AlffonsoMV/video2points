@@ -31,15 +31,10 @@ class PipelineConfig:
     novel_yaw_deg: float = -4.0
     novel_pitch_deg: float = 0.0
     novel_roll_deg: float = 0.0
-    mask_dilate_px: int = 4
-    mask_close_px: int = 3
+    mask_close_px: int = 15
+    mask_dilate_px: int = 3
     mask_min_area_px: int = 2
-    mask_gap_break_px: int = 2  # interior_only: opening radius to break thin border connections; smaller = keep more small holes
     mask_exterior_only: bool = False
-    mask_interior_only: bool = False
-    mask_open_px: int = 0
-    mask_support_close_px: int = 0
-    mask_support_dilate_px: int = 0
     mask_fill_rgb: tuple[int, int, int] | None = None
     inpaint_steps: int = 6
     inpaint_guidance_scale: float = 1.0

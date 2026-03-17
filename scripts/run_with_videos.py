@@ -169,11 +169,9 @@ def run_orbit_pipeline(
 
             novel_input, hole_mask, hole_overlay = utils.prepare_novel_view_inpainting_inputs(
                 render,
-                dilate_px=cfg.mask_dilate_px,
                 close_px=cfg.mask_close_px,
+                dilate_px=cfg.mask_dilate_px,
                 min_area_px=cfg.mask_min_area_px,
-                interior_only=True,
-                gap_break_px=cfg.mask_gap_break_px,
             )
             utils.save_pil(hole_mask, view_dir / "02_hole_mask.png")
             utils.save_pil(hole_overlay, view_dir / "03_hole_overlay.png")
@@ -201,7 +199,7 @@ def run_orbit_pipeline(
                 novel_input = utils.enhance_quality_with_flux2_klein(
                     novel_input,
                     prompt=flux_prompt,
-                    reference_images=frame_paths[:2],
+                    protect_mask=hole_mask,
                     device=device,
                     num_inference_steps=8,
                     guidance_scale=1.0,
