@@ -54,7 +54,10 @@ class PipelineConfig:
     novel_roll_deg: float = 0.0
     mask_dilate_px: int = 4
     mask_close_px: int = 3
+    mask_min_area_px: int = 2
     mask_exterior_only: bool = False
+    mask_interior_only: bool = False
+    mask_open_px: int = 0
     mask_support_close_px: int = 0
     mask_support_dilate_px: int = 0
     mask_fill_rgb: tuple[int, int, int] | None = None
@@ -65,7 +68,8 @@ class PipelineConfig:
         "fill only missing regions and preserve visible content, lighting, geometry, and textures."
     )
     inpaint_negative_prompt: str = (
-        "changes to visible regions, duplicated objects, warped geometry, blurry details, oversmoothing"
+        "white background, blank, empty, white fill, changes to visible regions, "
+        "duplicated objects, warped geometry, blurry details, oversmoothing"
     )
     seed: int = 0
     n_frames_per_video: int = 7
@@ -876,47 +880,79 @@ def build_hole_mask_from_valid_mask(
     close_px: int = 3,
     min_area_px: int = 16,
     exterior_only: bool = False,
+    interior_only: bool = False,
     support_close_px: int = 0,
     support_dilate_px: int = 0,
+    open_px: int = 0,
+    gap_break_px: int = 6,
 ) -> np.ndarray:
     valid = np.asarray(valid_mask, dtype=bool)
 
-    if exterior_only:
-        support_mask = valid.astype(np.uint8) * 255
-        if support_close_px > 0:
-            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * support_close_px + 1, 2 * support_close_px + 1))
-            support_mask = cv2.morphologyEx(support_mask, cv2.MORPH_CLOSE, k)
-        if support_dilate_px > 0:
-            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * support_dilate_px + 1, 2 * support_dilate_px + 1))
-            support_mask = cv2.dilate(support_mask, k)
+    # Start with all holes
+    hole_mask = (~valid).astype(np.uint8) * 255
 
-        support_bool = support_mask > 0
-        background = (~support_bool).astype(np.uint8)
-        _, labels = cv2.connectedComponents(background, connectivity=8)
-        border_labels = np.unique(
-            np.concatenate([labels[0], labels[-1], labels[:, 0], labels[:, -1]])
-        )
-        exterior_background = np.isin(labels, border_labels)
-        hole_mask = ((~valid) & exterior_background).astype(np.uint8) * 255
-    else:
-        support_bool = None
-        hole_mask = (~valid).astype(np.uint8) * 255
-
+    if open_px > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * open_px + 1, 2 * open_px + 1))
+        hole_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_OPEN, k)
     if close_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * close_px + 1, 2 * close_px + 1))
         hole_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_CLOSE, k)
     if dilate_px > 0:
         k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate_px + 1, 2 * dilate_px + 1))
         hole_mask = cv2.dilate(hole_mask, k)
-    if support_bool is not None:
-        hole_mask[support_bool] = 0
 
+    # Don't mask over actual valid pixels
+    hole_mask[valid] = 0
+
+    # Filter by interior/exterior: check which hole components touch the image border
+    if interior_only or exterior_only:
+        # Opening (erode→dilate) on the mask breaks thin channels that
+        # falsely connect interior holes to the border, without affecting
+        # the bulk shape of real holes.
+        classify_mask = hole_mask
+        if gap_break_px > 0:
+            k = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * gap_break_px + 1, 2 * gap_break_px + 1),
+            )
+            classify_mask = cv2.morphologyEx(hole_mask, cv2.MORPH_OPEN, k)
+
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            (classify_mask > 0).astype(np.uint8), connectivity=8,
+        )
+        border_labels = set(np.unique(np.concatenate([
+            labels[0], labels[-1], labels[:, 0], labels[:, -1],
+        ])))
+        border_labels.discard(0)
+
+        # Build a region mask from the interior/exterior classification
+        interior_region = np.zeros_like(hole_mask)
+        for label in range(1, num_labels):
+            touches_border = label in border_labels
+            if stats[label, cv2.CC_STAT_AREA] < min_area_px:
+                continue
+            keep = (interior_only and not touches_border) or (exterior_only and touches_border)
+            if keep:
+                interior_region[labels == label] = 255
+
+        if gap_break_px > 0 and np.any(interior_region):
+            # Dilate the classified regions back to recover original hole
+            # boundary pixels that were eroded away by the opening step.
+            k = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * (gap_break_px + 2) + 1, 2 * (gap_break_px + 2) + 1),
+            )
+            interior_region = cv2.dilate(interior_region, k)
+            return (hole_mask & interior_region).astype(np.uint8)
+
+        return interior_region
+
+    # No interior/exterior filtering — just min area
     if min_area_px > 1:
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats((hole_mask > 0).astype(np.uint8), connectivity=8)
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            (hole_mask > 0).astype(np.uint8), connectivity=8,
+        )
         cleaned = np.zeros_like(hole_mask)
         for label in range(1, num_labels):
-            area = stats[label, cv2.CC_STAT_AREA]
-            if area >= min_area_px:
+            if stats[label, cv2.CC_STAT_AREA] >= min_area_px:
                 cleaned[labels == label] = 255
         hole_mask = cleaned
     return hole_mask
@@ -1006,14 +1042,187 @@ def estimate_orbit(
     )
 
 
+def _average_camera_up(extrinsics: list[np.ndarray]) -> np.ndarray:
+    """Return the average world-space "up" direction across cameras (OpenCV convention)."""
+    avg_up = np.zeros(3, dtype=np.float32)
+    for e in extrinsics:
+        R_wfc = np.asarray(e, dtype=np.float32)[:, :3].T
+        avg_up -= R_wfc[:, 1]  # -Y_cam is world up in OpenCV
+    norm = float(np.linalg.norm(avg_up))
+    if norm < 1e-8:
+        return np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    return (avg_up / norm).astype(np.float32)
+
+
+def _estimate_world_up_from_points(
+    pts: np.ndarray,
+    cam_centers: np.ndarray,
+) -> np.ndarray:
+    """Estimate true world-up from point cloud geometry via PCA.
+
+    For aerial / drone footage the point cloud is roughly planar
+    (the scene is viewed from above), so the direction of least
+    variance is the true vertical axis.  The sign is chosen so
+    that the vector points from the scene toward the cameras
+    (i.e. *upward*).
+    """
+    centered = pts - pts.mean(axis=0)
+    cov = (centered.T @ centered) / max(len(centered), 1)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    up = eigenvectors[:, 0].astype(np.float32)
+
+    avg_cam = cam_centers.mean(axis=0)
+    centroid = pts.mean(axis=0)
+    if np.dot(up, avg_cam - centroid) < 0:
+        up = -up
+    return up
+
+
+def _camera_forward_world(extrinsic: np.ndarray) -> np.ndarray:
+    """Return the camera's forward (Z) direction in world coordinates."""
+    R_wfc = np.asarray(extrinsic, dtype=np.float32)[:, :3].T
+    forward = R_wfc[:, 2]
+    norm = float(np.linalg.norm(forward))
+    if norm < 1e-8:
+        return np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    return (forward / norm).astype(np.float32)
+
+
+def _estimate_lookat_point(
+    extrinsics: list[np.ndarray],
+    fallback_centroid: np.ndarray,
+) -> np.ndarray:
+    """Find the 3D point that best lies on all camera optical axes.
+
+    Uses a least-squares intersection of camera rays.  Falls back to
+    *fallback_centroid* if the system is degenerate.
+    """
+    a = np.zeros((3, 3), dtype=np.float64)
+    b = np.zeros(3, dtype=np.float64)
+    for extrinsic in extrinsics:
+        cam_center = camera_center_from_extrinsic(
+            np.asarray(extrinsic, dtype=np.float32),
+        ).astype(np.float64)
+        forward = _camera_forward_world(extrinsic).astype(np.float64)
+        projector = np.eye(3, dtype=np.float64) - np.outer(forward, forward)
+        a += projector
+        b += projector @ cam_center
+
+    if not np.isfinite(a).all() or np.linalg.norm(a) < 1e-8:
+        return np.asarray(fallback_centroid, dtype=np.float32)
+
+    lookat, *_ = np.linalg.lstsq(a, b, rcond=None)
+    if not np.isfinite(lookat).all():
+        return np.asarray(fallback_centroid, dtype=np.float32)
+    return np.asarray(lookat, dtype=np.float32)
+
+
+def estimate_horizontal_orbit(
+    extrinsics: list[np.ndarray] | np.ndarray,
+    centroid: np.ndarray,
+    point_cloud: np.ndarray | None = None,
+) -> tuple[OrbitInfo, float]:
+    """Like ``estimate_orbit`` but forces a horizontal orbit plane.
+
+    When *point_cloud* is provided the world-up direction is estimated
+    via PCA on the point cloud (the "thin" direction for aerial footage
+    is vertical).  Otherwise falls back to the average camera-up heuristic.
+
+    Returns ``(OrbitInfo, camera_height_offset)``.
+    """
+    extrinsics = [np.asarray(e, dtype=np.float32) for e in extrinsics]
+    centroid = _estimate_lookat_point(extrinsics, np.asarray(centroid, dtype=np.float32))
+
+    cam_centers = np.array(
+        [camera_center_from_extrinsic(e) for e in extrinsics],
+        dtype=np.float32,
+    )
+
+    if point_cloud is not None and len(point_cloud) >= 10:
+        up_axis = _estimate_world_up_from_points(point_cloud, cam_centers)
+    else:
+        up_axis = _average_camera_up(extrinsics)
+    centered = cam_centers - centroid
+    height_offsets = centered @ up_axis
+    horizontal = centered - np.outer(height_offsets, up_axis)
+
+    u_basis = horizontal[0].copy()
+    u_norm = float(np.linalg.norm(u_basis))
+    if u_norm < 1e-6:
+        for candidate in horizontal[1:]:
+            u_basis = candidate.copy()
+            u_norm = float(np.linalg.norm(u_basis))
+            if u_norm >= 1e-6:
+                break
+    if u_norm < 1e-6:
+        arb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        if abs(float(np.dot(arb, up_axis))) > 0.9:
+            arb = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        u_basis = arb - np.dot(arb, up_axis) * up_axis
+        u_norm = float(np.linalg.norm(u_basis))
+    u_basis = (u_basis / max(u_norm, 1e-8)).astype(np.float32)
+    v_basis = np.cross(up_axis, u_basis).astype(np.float32)
+    v_basis /= max(float(np.linalg.norm(v_basis)), 1e-8)
+
+    radii = np.linalg.norm(horizontal, axis=1)
+    radius = float(np.median(radii))
+
+    angles = np.arctan2(horizontal @ v_basis, horizontal @ u_basis).astype(np.float32)
+    order = np.argsort(angles)
+    angles_sorted = angles[order]
+
+    diffs = np.diff(angles_sorted)
+    wrap_gap = float(2 * np.pi - (angles_sorted[-1] - angles_sorted[0]))
+    all_gaps = np.append(diffs, wrap_gap)
+    gap_idx = int(np.argmax(all_gaps))
+
+    if gap_idx < len(diffs):
+        gap_start = float(angles_sorted[gap_idx])
+        gap_end = float(angles_sorted[gap_idx + 1])
+    else:
+        gap_start = float(angles_sorted[-1])
+        gap_end = float(angles_sorted[0] + 2 * np.pi)
+
+    orbit = OrbitInfo(
+        centroid=centroid,
+        normal=up_axis,
+        radius=radius,
+        u=u_basis,
+        v=v_basis,
+        angles=angles_sorted,
+        gap_start=gap_start,
+        gap_end=gap_end,
+        gap_size=float(all_gaps[gap_idx]),
+    )
+    return orbit, float(np.median(height_offsets))
+
+
+def _rotation_matrix_around_axis(axis: np.ndarray, angle: float) -> np.ndarray:
+    """Rodrigues rotation: 3x3 matrix rotating *angle* radians around *axis*."""
+    axis = axis.astype(np.float64)
+    axis = axis / max(np.linalg.norm(axis), 1e-12)
+    K = np.array([
+        [0, -axis[2], axis[1]],
+        [axis[2], 0, -axis[0]],
+        [-axis[1], axis[0], 0],
+    ], dtype=np.float64)
+    return (np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)).astype(np.float32)
+
+
 def generate_orbit_cameras(
     orbit: OrbitInfo,
     n_views: int,
     reference_intrinsic: np.ndarray,
+    camera_height_offset: float = 0.0,
+    reference_extrinsics: list[np.ndarray] | None = None,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     """Place *n_views* cameras evenly inside the orbit's largest angular gap.
 
-    Each camera sits on the fitted circle and looks at the centroid.
+    When *reference_extrinsics* are provided the orientation of each novel
+    camera is obtained by rotating the nearest original camera around the
+    orbit normal — this preserves the original pitch and roll exactly,
+    which is critical for drone / aerial footage.
+
     Returns a list of ``(extrinsic, intrinsic)`` pairs.
     """
     if n_views <= 0:
@@ -1024,28 +1233,57 @@ def generate_orbit_cameras(
     ref_intr = np.asarray(reference_intrinsic, dtype=np.float32)
     cameras: list[tuple[np.ndarray, np.ndarray]] = []
 
+    ref_data: list[tuple[float, np.ndarray]] | None = None
+    if reference_extrinsics:
+        ref_data = []
+        for ext in reference_extrinsics:
+            ext = np.asarray(ext, dtype=np.float32)
+            center = camera_center_from_extrinsic(ext)
+            horiz = (center - orbit.centroid) - np.dot(center - orbit.centroid, orbit.normal) * orbit.normal
+            a = float(np.arctan2(np.dot(horiz, orbit.v), np.dot(horiz, orbit.u)))
+            ref_data.append((a, ext))
+
     for angle in new_angles:
-        pos = orbit.centroid + orbit.radius * (
-            np.cos(angle) * orbit.u + np.sin(angle) * orbit.v
+        pos = (
+            orbit.centroid
+            + camera_height_offset * orbit.normal
+            + orbit.radius * (np.cos(angle) * orbit.u + np.sin(angle) * orbit.v)
         )
 
-        z_cam = orbit.centroid - pos
-        z_cam = z_cam / max(np.linalg.norm(z_cam), 1e-8)
+        if ref_data is not None:
+            ref_angles_arr = np.array([rd[0] for rd in ref_data])
+            diffs = np.abs(np.arctan2(
+                np.sin(ref_angles_arr - angle),
+                np.cos(ref_angles_arr - angle),
+            ))
+            closest_idx = int(np.argmin(diffs))
+            closest_angle, closest_ext = ref_data[closest_idx]
 
-        x_cam = np.cross(z_cam, orbit.normal)
-        x_norm = np.linalg.norm(x_cam)
-        if x_norm < 1e-6:
-            arb = np.array([1, 0, 0], dtype=np.float32)
-            if abs(np.dot(z_cam, arb)) > 0.9:
-                arb = np.array([0, 1, 0], dtype=np.float32)
-            x_cam = np.cross(z_cam, arb)
+            R_wfc_ref = closest_ext[:, :3].T
+            delta = float(angle - closest_angle)
+            R_delta = _rotation_matrix_around_axis(orbit.normal, delta)
+            R_wfc_new = (R_delta @ R_wfc_ref).astype(np.float32)
+
+            extr = extrinsic_from_camera_pose(R_wfc_new, pos.astype(np.float32))
+        else:
+            z_cam = orbit.centroid - pos
+            z_cam = z_cam / max(np.linalg.norm(z_cam), 1e-8)
+
+            x_cam = np.cross(orbit.normal, z_cam)
             x_norm = np.linalg.norm(x_cam)
-        x_cam = x_cam / x_norm
+            if x_norm < 1e-6:
+                arb = np.array([1, 0, 0], dtype=np.float32)
+                if abs(np.dot(z_cam, arb)) > 0.9:
+                    arb = np.array([0, 1, 0], dtype=np.float32)
+                x_cam = np.cross(arb, z_cam)
+                x_norm = np.linalg.norm(x_cam)
+            x_cam = x_cam / x_norm
 
-        y_cam = np.cross(z_cam, x_cam)
+            y_cam = np.cross(z_cam, x_cam)
 
-        R_wfc = np.column_stack([x_cam, y_cam, z_cam]).astype(np.float32)
-        extr = extrinsic_from_camera_pose(R_wfc, pos.astype(np.float32))
+            R_wfc = np.column_stack([x_cam, y_cam, z_cam]).astype(np.float32)
+            extr = extrinsic_from_camera_pose(R_wfc, pos.astype(np.float32))
+
         cameras.append((extr, ref_intr.copy()))
 
     return cameras
@@ -1146,7 +1384,9 @@ def opencv_inpaint_fallback(image: Image.Image, mask: Image.Image, radius: int =
     return np_to_pil_rgb(out)
 
 
-def _masked_region_near_black(image: Image.Image, mask: Image.Image, threshold_mean: float = 2.0, threshold_std: float = 2.0) -> bool:
+
+def _masked_region_degenerate(image: Image.Image, mask: Image.Image) -> bool:
+    """Detect degenerate SDXL output: masked region is nearly all-black or all-white."""
     mask_np = np.asarray(mask.convert("L")) > 0
     if not np.any(mask_np):
         return False
@@ -1154,7 +1394,10 @@ def _masked_region_near_black(image: Image.Image, mask: Image.Image, threshold_m
     region = img_np[mask_np]
     if region.size == 0:
         return False
-    return float(region.mean()) < threshold_mean and float(region.std()) < threshold_std
+    mean, std = float(region.mean()), float(region.std())
+    near_black = mean < 2.0 and std < 2.0
+    near_white = mean > 253.0 and std < 2.0
+    return near_black or near_white
 
 
 def _load_reference_images(reference_images: Iterable[Image.Image | str | Path] | None) -> list[Image.Image]:
@@ -1279,6 +1522,58 @@ def edit_with_flux2_klein_local(
         resized_for_model=resized,
         metadata={"reference_count": len(refs_for_pipe), "model_id": model_id},
     )
+
+
+def refine_image_with_flux2_klein(
+    image: Image.Image,
+    prompt: str = (
+        "Photorealistic image. Slight softening for natural look, enhance realism. "
+        "Preserve the exact same geometry, colors, composition, and content. "
+        "Keep white background and surroundings white. Do not add or remove objects."
+    ),
+    model_id: str = "black-forest-labs/FLUX.2-klein-4B",
+    device: str | None = None,
+    reference_images: Iterable[Image.Image | str | Path] | None = None,
+    mask: Image.Image | None = None,
+    num_inference_steps: int = 4,
+    guidance_scale: float = 1.0,
+    seed: int = 0,
+) -> Image.Image:
+    """Use FLUX.2-klein to refine a single image for photorealism.
+
+    Optionally uses reference_images (e.g. original video frames) for style guidance.
+    When mask is provided and non-empty, FLUX only edits the masked regions (inpaint mode),
+    leaving the rest of the image unchanged. Returns the refined image (composited when masked).
+    """
+    device = device or get_device()
+    image = image.convert("RGB")
+    w, h = image.size
+    if mask is not None:
+        mask = mask.convert("L")
+        if np.asarray(mask).max() == 0:
+            mask = Image.new("L", (w, h), 0)
+    else:
+        mask = Image.new("L", (w, h), 0)
+
+    refs = _load_reference_images(reference_images)
+    # When no refs: pass [] so FLUX gets only the base image and must generate from context.
+    # Using [image] as fallback caused FLUX to copy the input (no real generation).
+    refs_for_pipe = list(refs) if refs else []
+
+    ref_result = edit_with_flux2_klein_local(
+        image=image,
+        mask=mask,
+        prompt=prompt,
+        model_id=model_id,
+        device=device,
+        reference_images=refs_for_pipe,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        seed=seed,
+    )
+    # When mask has holes, composited pastes generated only into masked regions; otherwise use raw.
+    mask_max = np.asarray(mask).max()
+    return ref_result.composited if mask_max > 0 else ref_result.raw_generated
 
 
 def inpaint_with_flux2_klein_bfl(
@@ -1475,6 +1770,8 @@ def inpaint_with_diffusion(
     backend: str = "auto",
     num_inference_steps: int = 20,
     guidance_scale: float = 6.5,
+    strength: float = 0.95,
+    padding_mask_crop: int | None = 32,
     seed: int = 0,
     allow_fallback_to_opencv: bool = True,
     bfl_api_key: str | None = None,
@@ -1544,39 +1841,61 @@ def inpaint_with_diffusion(
 
     image = image.convert("RGB")
     mask = mask.convert("L")
-    image_for_pipe, mask_for_pipe, resized = _resize_to_multiple_of_8(image, mask)
+
+    # SDXL inpainting on MPS consistently produces degenerate (white) output.
+    # Force CPU to get correct results. Slower but actually works.
+    if device == "mps":
+        print("  [inpaint] SDXL inpainting broken on MPS; using CPU instead.")
+        device = "cpu"
+
+    # SDXL inpainting was trained with WHITE in holes; gray/other fills are OOD and cause the model
+    # to preserve input instead of generating. Ensure white in masked regions before calling pipeline.
+    image_for_sdxl = _composite_preserve_unmasked(
+        image,
+        Image.new("RGB", image.size, (255, 255, 255)),
+        mask,
+    )
+
+    # SDXL was trained at 1024x1024. Small images (e.g. 294x518) produce degenerate output.
+    # Upscale so the short side is at least 1024, then downscale the result back.
+    SDXL_MIN_SIDE = 1024
+    orig_size = image.size  # (w, h)
+    w, h = orig_size
+    short_side = min(w, h)
+    upscaled_for_sdxl = False
+    if short_side < SDXL_MIN_SIDE:
+        scale = SDXL_MIN_SIDE / short_side
+        new_w, new_h = int(w * scale), int(h * scale)
+        image_for_sdxl = image_for_sdxl.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        mask_for_sdxl = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
+        upscaled_for_sdxl = True
+        print(f"  [inpaint] Upscaling {w}x{h} → {new_w}x{new_h} for SDXL (trained at 1024x1024)")
+    else:
+        mask_for_sdxl = mask
+
+    image_for_pipe, mask_for_pipe, resized = _resize_to_multiple_of_8(image_for_sdxl, mask_for_sdxl)
 
     try:
         pipe = load_inpainting_pipeline(model_id=model_id, device=device)
         generator = torch.Generator(device="cpu").manual_seed(seed)
-        result = pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            image=image_for_pipe,
-            mask_image=mask_for_pipe,
-            num_inference_steps=int(num_inference_steps),
-            guidance_scale=float(guidance_scale),
-            generator=generator,
-        )
+        pipe_kw: dict[str, Any] = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "image": image_for_pipe,
+            "mask_image": mask_for_pipe,
+            "num_inference_steps": int(num_inference_steps),
+            "guidance_scale": float(guidance_scale),
+            "strength": float(strength),
+            "generator": generator,
+        }
+        if padding_mask_crop is not None:
+            pipe_kw["padding_mask_crop"] = int(padding_mask_crop)
+        result = pipe(**pipe_kw)
         raw = result.images[0].convert("RGB")
-        if resized:
-            raw = raw.resize(image.size, Image.Resampling.LANCZOS)
-        if device == "mps" and _masked_region_near_black(raw, mask):
-            print("[inpaint_with_diffusion] Degenerate MPS inpainting output detected, retrying on CPU.")
-            return inpaint_with_diffusion(
-                image=image,
-                mask=mask,
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                model_id=model_id,
-                device="cpu",
-                num_inference_steps=num_inference_steps,
-                guidance_scale=guidance_scale,
-                seed=seed,
-                allow_fallback_to_opencv=allow_fallback_to_opencv,
-            )
+        if resized or upscaled_for_sdxl:
+            raw = raw.resize(orig_size, Image.Resampling.LANCZOS)
         composited = _composite_preserve_unmasked(image, raw, mask)
-        return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="diffusers", resized_for_model=resized)
+        return InpaintResult(raw_generated=raw, composited=composited, mask_used=mask, backend="diffusers", resized_for_model=resized or upscaled_for_sdxl)
     except Exception as exc:
         if not allow_fallback_to_opencv:
             raise
@@ -1592,9 +1911,12 @@ def prepare_novel_view_inpainting_inputs(
     close_px: int = 3,
     min_area_px: int = 16,
     exterior_only: bool = False,
+    interior_only: bool = False,
+    open_px: int = 0,
     support_close_px: int = 0,
     support_dilate_px: int = 0,
     fill_mask_rgb: tuple[int, int, int] | None = None,
+    feather_px: int = 3,
 ) -> tuple[Image.Image, Image.Image, Image.Image]:
     novel_img = render.image.convert("RGB")
     hole_mask_np = build_hole_mask_from_valid_mask(
@@ -1603,9 +1925,18 @@ def prepare_novel_view_inpainting_inputs(
         close_px=close_px,
         min_area_px=min_area_px,
         exterior_only=exterior_only,
+        interior_only=interior_only,
+        open_px=open_px,
         support_close_px=support_close_px,
         support_dilate_px=support_dilate_px,
     )
+
+    if feather_px > 0:
+        k_size = 2 * feather_px + 1
+        hole_mask_np = cv2.GaussianBlur(
+            hole_mask_np, (k_size, k_size), 0,
+        )
+
     if fill_mask_rgb is not None:
         masked_base_np = np.asarray(novel_img, dtype=np.uint8).copy()
         masked_base_np[hole_mask_np > 0] = np.asarray(fill_mask_rgb, dtype=np.uint8)
